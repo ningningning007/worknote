@@ -1494,18 +1494,19 @@ function deleteSubNote(tabId, subId, noteId) {
 
 function addSubItem(tabId) {
   const inp = document.getElementById('sub-add-input-'+tabId);
+  if (!inp) { console.warn('sub-add-input not found for tabId:', tabId); return; }
   const label = (inp.value||'').trim();
   if (!label) return;
   getSubs(tabId).push({ id: uid(), label, today: '', history: [], aiSummary: null, _open: false });
   inp.value = '';
-  saveToStorage();
-  render();
+  render();           // render immediately — don't wait for storage
+  saveToStorage();    // save in background
 }
 
 function removeSubItem(tabId, subId) {
   state.subItems[tabId] = getSubs(tabId).filter(s => s.id !== subId);
-  saveToStorage();
   render();
+  saveToStorage();
 }
 
 async function generateSubAI(tabId, subId) {
@@ -1539,7 +1540,7 @@ async function generateSubAI(tabId, subId) {
   if (todayNote) context += `Today's draft: ${todayNote}\n`;
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1613,7 +1614,7 @@ function closeModal() { document.getElementById('modal-add').classList.remove('s
 function confirmAddFn() {
   const val = document.getElementById('modal-fn-input').value.trim();
   if (!val) return;
-  const id = val.toLowerCase().replace(/\s+/g,'_') + '_' + uid();
+  const id = val.toLowerCase().replace(/[^a-z0-9]+/g,'_') + '_' + uid().replace(/[^a-z0-9]/g,'');
   const colorIdx = state.functions.length % FN_COLORS.length;
   state.functions.push({ id, label: val, color: FN_COLORS[colorIdx] });
   state.activeTab = id;
@@ -1725,7 +1726,7 @@ async function generateAI(tabId) {
   if (body) body.innerHTML = `<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>`;
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2084,7 +2085,7 @@ async function extractTodosFromNote(text, tabId, subId) {
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
   const context = 'Function: ' + fnLabel + (subLabel?' / Sub-item: '+subLabel:'') + '\nNote: ' + text;
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
