@@ -1331,8 +1331,12 @@ function renderPage() {
 function normaliseBullets(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val; // already new format
-  // Split by bullet char or newline
-  return val.split(/\n|•/).map(s => s.trim()).filter(Boolean).map(text => ({ text, locked: false }));
+  // Split on newlines, then strip leading bullets/dashes from each item
+  return String(val)
+    .split(/\n/)
+    .map(s => s.replace(/^[•\-\*\d\.]+\s*/, '').trim())
+    .filter(Boolean)
+    .map(text => ({ text, locked: false }));
 }
 
 function normaliseAI(ai) {
@@ -2511,35 +2515,38 @@ async function startSession(userId, email) {
   hideAuthOverlay('supabase');
   await loadFromStorage();
   render();
+  const _pb = document.getElementById('page-body'); if (_pb) wireBulletEvents(_pb);
   autoRegenerateAll();
 }
 
 
 // ─── BULLET EVENT DELEGATION ─────────────────────────────────────
-document.addEventListener('click', function(e) {
-  const btn = e.target.closest('[data-action]');
-  if (!btn) return;
-  const action = btn.dataset.action;
-  const bullet = btn.closest('.ai-bullet');
-
-  if (action === 'del' && bullet) {
-    e.preventDefault();
-    deleteBullet(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
-  } else if (action === 'lock' && bullet) {
-    e.preventDefault();
-    toggleBulletLock(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
-  } else if (action === 'add') {
-    e.preventDefault();
-    addBullet(btn.dataset.ctx, btn.dataset.id, btn.dataset.sub, btn.dataset.sec);
-  }
-});
-
-document.addEventListener('focusout', function(e) {
-  if (!e.target.classList.contains('ai-bullet-text')) return;
-  const bullet = e.target.closest('.ai-bullet');
-  if (!bullet) return;
-  saveBulletEdit(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx), e.target.innerText);
-});
+function wireBulletEvents(root) {
+  root.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const bullet = btn.closest('.ai-bullet');
+    if (action === 'del' && bullet) {
+      e.preventDefault(); e.stopPropagation();
+      deleteBullet(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
+    } else if (action === 'lock' && bullet) {
+      e.preventDefault(); e.stopPropagation();
+      toggleBulletLock(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
+    } else if (action === 'add') {
+      e.preventDefault(); e.stopPropagation();
+      addBullet(btn.dataset.ctx, btn.dataset.id, btn.dataset.sub, btn.dataset.sec);
+    }
+  });
+  root.addEventListener('focusout', function(e) {
+    if (!e.target.classList.contains('ai-bullet-text')) return;
+    const bullet = e.target.closest('.ai-bullet');
+    if (!bullet) return;
+    saveBulletEdit(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx), e.target.innerText);
+  });
+}
+// Wire on both document and page-body for maximum compatibility
+wireBulletEvents(document);
 
 // ─── INIT ────────────────────────────────────────────────────────
 (async () => {
