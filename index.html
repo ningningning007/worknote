@@ -1556,9 +1556,10 @@ Be concise and action-oriented. Match the language of the notes (English or Chin
       })
     });
     const data = await resp.json();
-    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const clean = text.replace(/\`\`\`json|\`\`\`/g,'').trim();
-    const parsed = JSON.parse(clean);
+    const raw2 = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    const match2 = raw2.match(/\{[\s\S]*\}/);
+    if (!match2) throw new Error('No JSON in response');
+    const parsed = JSON.parse(match2[0]);
     sub.aiSummary = parsed;
     saveToStorage();
     if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(parsed);
@@ -1745,9 +1746,10 @@ The user may write notes in English or Chinese — respond in the same language 
     });
 
     const data = await resp.json();
-    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const clean = text.replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(clean);
+    const raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in response');
+    const parsed = JSON.parse(match[0]);
     notes.aiSummary = parsed;
     saveToStorage();
     if (body) body.innerHTML = renderAISummary(parsed);
@@ -2083,24 +2085,32 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 20) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const context = 'Function: ' + fnLabel + (subLabel?' / Sub-item: '+subLabel:'') + '\nNote: ' + text;
+  const prompt = 'Function: ' + fnLabel + (subLabel?' / Sub-item: '+subLabel:'') +
+    '\nNote: ' + text +
+    '\n\nExtract actionable todo items. Return ONLY a JSON array, no other text:\n[{"task":"...","pic":"...","due":"...","catchup":"..."}]\n- task: action description (same language as note)\n- pic: person responsible (empty if not mentioned)\n- due: ISO date YYYY-MM-DD if mentioned, else empty\n- catchup: follow-up date YYYY-MM-DD (1 week from today if time-sensitive, else empty)\nToday is ' + new Date().toISOString().slice(0,10) + '.\nIf no actionable items, return [].';
   try {
     const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'MiniMax-M2.7-highspeed',
+        model: 'MiniMax-M2.7',
         max_tokens: 800,
-        system: 'Extract actionable todo items from this work note. Return ONLY a JSON array (no other text):\n[{"task":"...","pic":"...","due":"...","catchup":"..."}]\n- task: clear action description (required, same language as note)\n- pic: person/team responsible (empty string if not mentioned)\n- due: ISO date YYYY-MM-DD if mentioned, else empty string\n- catchup: suggested follow-up date YYYY-MM-DD (1 week from today if task is time-sensitive, else empty)\nToday is ' + new Date().toISOString().slice(0,10) + '.\nIf no actionable items found return [].\nReturn valid JSON only.',
-        messages: [{ role: 'user', content: context }]
+        messages: [{ role: 'user', content: prompt }]
       })
     });
     const data = await resp.json();
-    const raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const clean = raw.replace(/```json|```/g,'').trim();
-    const parsed = JSON.parse(clean);
+    // Get only text blocks (skip thinking blocks)
+    const textBlocks = (data.content||[]).filter(b => b.type === 'text');
+    const raw = textBlocks.map(b => b.text).join('');
+    // Extract JSON array from response robustly
+    const match = raw.match(/\[\s*[\s\S]*\]/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
     return Array.isArray(parsed) ? parsed : [];
-  } catch(e) { return []; }
+  } catch(e) {
+    console.warn('Todo extraction failed:', e);
+    return [];
+  }
 }
 
 // ─── TODO REVIEW POPUP ────────────────────────────────────────────
