@@ -842,6 +842,45 @@
     .auth-card { padding: 28px 20px; }
   }
 
+
+  /* ─── AI SUMMARY BULLETS ─────────────────────────────────────── */
+  .ai-bullets { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; }
+  .ai-bullet {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 4px 6px; border-radius: 6px; transition: background 0.1s;
+    group: true;
+  }
+  .ai-bullet:hover { background: var(--bg2); }
+  .ai-bullet-dot { color: var(--accent); font-size: 12px; flex-shrink: 0; padding-top: 3px; font-weight: 700; }
+  .ai-bullet-text {
+    font-size: 13.5px; color: var(--text); line-height: 1.6; flex: 1;
+    outline: none; border-radius: 4px;
+  }
+  .ai-bullet-text[contenteditable=true]:focus {
+    background: var(--surface); box-shadow: 0 0 0 2px var(--accent); padding: 2px 6px;
+  }
+  .ai-bullet-text.locked { font-style: normal; }
+  .ai-bullet-actions {
+    display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
+  }
+  .ai-bullet:hover .ai-bullet-actions { opacity: 1; }
+  .ai-bullet-btn {
+    width: 22px; height: 22px; border-radius: 4px; border: none;
+    background: none; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; color: var(--text3); transition: all 0.1s;
+  }
+  .ai-bullet-btn:hover { background: var(--bg3); color: var(--text); }
+  .ai-bullet-btn.del:hover { background: var(--red-light); color: var(--red); }
+  .ai-bullet-btn.lock-on { color: var(--accent); opacity: 1 !important; }
+  .ai-bullet.editing .ai-bullet-actions { opacity: 1; }
+  .ai-section-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .ai-add-btn {
+    font-size: 12px; padding: 3px 10px; border-radius: 20px;
+    border: 1px dashed var(--border2); background: none; color: var(--text3);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .ai-add-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  @media (max-width: 600px) { .ai-bullet-actions { opacity: 1; } }
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -1142,7 +1181,7 @@ function renderPage() {
       </button>
     </div>
     <div class="card-body" id="ai-body-${tabId}">
-      ${renderAISummary(notes.aiSummary)}
+      ${renderAISummary(notes.aiSummary, tabId)}
     </div>
   `;
   lc.appendChild(aiCard);
@@ -1288,31 +1327,147 @@ function renderPage() {
   }
 }
 
-function renderAISummary(ai) {
-  if (!ai) return `<p class="ai-summary-placeholder">No summary yet — click ↻ Regenerate to create an AI summary of your notes.</p>`;
-  return `
-    <div class="ai-section">
-      <div class="ai-section-label">Objectives</div>
-      <div class="ai-section-text">${escHtml(ai.obj)}</div>
-    </div>
-    <div class="ai-section">
-      <div class="ai-section-label">Latest progress</div>
-      <div class="ai-section-text">${escHtml(ai.prog)}</div>
-    </div>
-    <div class="ai-section">
-      <div class="ai-section-label">Next steps</div>
-      <div class="ai-section-text">${escHtml(ai.next)}</div>
-    </div>
-  `;
+// Convert AI summary from old string format to new bullets array format
+function normaliseBullets(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val; // already new format
+  // Split by bullet char or newline
+  return val.split(/\n|•/).map(s => s.trim()).filter(Boolean).map(text => ({ text, locked: false }));
 }
 
-function renderSubAI(ai) {
-  if (!ai) return `<p class="sub-ai-placeholder">No summary yet — click Summarise to generate.</p>`;
-  return `
-    <div class="sub-ai-section"><div class="sub-ai-label">Objectives</div><div class="sub-ai-text">${escHtml(ai.obj)}</div></div>
-    <div class="sub-ai-section"><div class="sub-ai-label">Latest progress</div><div class="sub-ai-text">${escHtml(ai.prog)}</div></div>
-    <div class="sub-ai-section"><div class="sub-ai-label">Next steps</div><div class="sub-ai-text">${escHtml(ai.next)}</div></div>
-  `;
+function normaliseAI(ai) {
+  if (!ai) return null;
+  return {
+    obj:  normaliseBullets(ai.obj),
+    prog: normaliseBullets(ai.prog),
+    next: normaliseBullets(ai.next),
+  };
+}
+
+function renderBullets(bullets, sectionKey, ctxType, ctxId, ctxSub) {
+  if (!bullets || !bullets.length) return '<p class="ai-summary-placeholder" style="font-size:13px;">—</p>';
+  var sub = ctxSub || '';
+  var html = '<div class="ai-bullets">';
+  bullets.forEach(function(b, i) {
+    var lockClass = b.locked ? ' lock-on' : '';
+    var lockIcon = b.locked ? '&#128274;' : '&#128275;';
+    var lockTip = b.locked ? 'Locked' : 'Unlocked';
+    html += '<div class="ai-bullet"' +
+      ' data-ctx="' + ctxType + '" data-id="' + escAttr(ctxId) + '"' +
+      ' data-sub="' + escAttr(sub) + '" data-sec="' + sectionKey + '" data-idx="' + i + '">' +
+      '<span class="ai-bullet-dot">•</span>' +
+      '<span class="ai-bullet-text" contenteditable="true">' + escHtml(b.text) + '</span>' +
+      '<div class="ai-bullet-actions">' +
+        '<button class="ai-bullet-btn' + lockClass + '" data-action="lock" title="' + lockTip + '">' + lockIcon + '</button>' +
+        '<button class="ai-bullet-btn del" data-action="del" title="Delete">&#10005;</button>' +
+      '</div></div>';
+  });
+  html += '<button class="ai-add-btn" data-action="add"' +
+    ' data-ctx="' + ctxType + '" data-id="' + escAttr(ctxId) + '"' +
+    ' data-sub="' + escAttr(sub) + '" data-sec="' + sectionKey + '">+ add</button></div>';
+  return html;
+}
+function escAttr(s) { return (s||'').replace(/"/g,'&quot;'); }
+
+function renderAISummary(ai, tabId) {
+  if (!ai) return '<p class="ai-summary-placeholder">No summary yet — click ↻ Regenerate to create an AI summary of your notes.</p>';
+  const n = normaliseAI(ai);
+  return '<div class="ai-section"><div class="ai-section-label">Objectives</div>' +
+    renderBullets(n.obj, 'obj', 'tab', tabId, '') + '</div>' +
+    '<div class="ai-section"><div class="ai-section-label">Latest progress</div>' +
+    renderBullets(n.prog, 'prog', 'tab', tabId, '') + '</div>' +
+    '<div class="ai-section"><div class="ai-section-label">Next steps</div>' +
+    renderBullets(n.next, 'next', 'tab', tabId, '') + '</div>';
+}
+
+function renderSubAI(ai, tabId, subId) {
+  if (!ai) return '<p class="sub-ai-placeholder">No summary yet — click Summarise to generate.</p>';
+  const n = normaliseAI(ai);
+  return '<div class="sub-ai-section"><div class="sub-ai-label">Objectives</div>' +
+    renderBullets(n.obj, 'obj', 'sub', tabId, subId) + '</div>' +
+    '<div class="sub-ai-section"><div class="sub-ai-label">Latest progress</div>' +
+    renderBullets(n.prog, 'prog', 'sub', tabId, subId) + '</div>' +
+    '<div class="sub-ai-section"><div class="sub-ai-label">Next steps</div>' +
+    renderBullets(n.next, 'next', 'sub', tabId, subId) + '</div>';
+}
+
+// ─── BULLET EDIT / DELETE / LOCK ─────────────────────────────────
+function getAIRef(ctxType, ctxId, ctxSub) {
+  if (ctxType === 'tab') return getNotes(ctxId).aiSummary;
+  const subs = getSubs(ctxId);
+  const sub = subs.find(s => s.id === ctxSub);
+  return sub ? sub.aiSummary : null;
+}
+
+function setAIRef(ctxType, ctxId, ctxSub, ai) {
+  if (ctxType === 'tab') { getNotes(ctxId).aiSummary = ai; }
+  else {
+    const sub = getSubs(ctxId).find(s => s.id === ctxSub);
+    if (sub) sub.aiSummary = ai;
+  }
+  saveToStorage();
+}
+
+function ensureNormAI(ctxType, ctxId, ctxSub) {
+  const ai = getAIRef(ctxType, ctxId, ctxSub);
+  if (!ai) return null;
+  const norm = normaliseAI(ai);
+  setAIRef(ctxType, ctxId, ctxSub, norm);
+  return norm;
+}
+
+function saveBulletEdit(ctxType, ctxId, ctxSub, section, idx, newText) {
+  const ai = ensureNormAI(ctxType, ctxId, ctxSub);
+  if (!ai || !ai[section] || !ai[section][idx]) return;
+  const trimmed = newText.trim();
+  if (!trimmed) return;
+  ai[section][idx].text = trimmed;
+  ai[section][idx].locked = true; // auto-lock on edit
+  setAIRef(ctxType, ctxId, ctxSub, ai);
+}
+
+function toggleBulletLock(ctxType, ctxId, ctxSub, section, idx) {
+  const ai = ensureNormAI(ctxType, ctxId, ctxSub);
+  if (!ai || !ai[section] || !ai[section][idx]) return;
+  ai[section][idx].locked = !ai[section][idx].locked;
+  setAIRef(ctxType, ctxId, ctxSub, ai);
+  // Re-render just the summary panel
+  refreshAIPanel(ctxType, ctxId, ctxSub);
+}
+
+function deleteBullet(ctxType, ctxId, ctxSub, section, idx) {
+  const ai = ensureNormAI(ctxType, ctxId, ctxSub);
+  if (!ai || !ai[section]) return;
+  ai[section].splice(idx, 1);
+  setAIRef(ctxType, ctxId, ctxSub, ai);
+  refreshAIPanel(ctxType, ctxId, ctxSub);
+}
+
+function addBullet(ctxType, ctxId, ctxSub, section) {
+  const ai = ensureNormAI(ctxType, ctxId, ctxSub);
+  if (!ai) return;
+  if (!ai[section]) ai[section] = [];
+  ai[section].push({ text: 'New item — click to edit', locked: true });
+  setAIRef(ctxType, ctxId, ctxSub, ai);
+  refreshAIPanel(ctxType, ctxId, ctxSub);
+  // Focus the new bullet after render
+  setTimeout(() => {
+    const bullets = document.querySelectorAll('[id^="bullet-' + ctxType + '-' + ctxId + '-' + section + '-"]');
+    if (bullets.length) {
+      const last = bullets[bullets.length - 1].querySelector('.ai-bullet-text');
+      if (last) { last.focus(); document.execCommand('selectAll'); }
+    }
+  }, 50);
+}
+
+function refreshAIPanel(ctxType, ctxId, ctxSub) {
+  if (ctxType === 'tab') {
+    const bodyEl = document.getElementById('ai-body-' + ctxId);
+    if (bodyEl) bodyEl.innerHTML = renderAISummary(getAIRef('tab', ctxId, ''), ctxId);
+  } else {
+    const bodyEl = document.getElementById('sub-ai-body-' + ctxSub);
+    if (bodyEl) bodyEl.innerHTML = renderSubAI(getAIRef('sub', ctxId, ctxSub), ctxId, ctxSub);
+  }
 }
 
 function renderSubItem(tabId, sub) {
@@ -1341,7 +1496,7 @@ function renderSubItem(tabId, sub) {
             <span>✦ AI Summary</span>
             <button class="btn" style="font-size:11px;padding:3px 9px;" onclick="generateSubAI('${tabId}','${sid}')">↻ Summarise</button>
           </div>
-          <div id="sub-ai-body-${sid}">${renderSubAI(sub.aiSummary)}</div>
+          <div id="sub-ai-body-${sid}">${renderSubAI(sub.aiSummary, tabId, sid)}</div>
         </div>
 
         <!-- Today's note panel -->
@@ -1546,12 +1701,18 @@ async function generateSubAI(tabId, subId) {
       body: JSON.stringify({
         model: 'MiniMax-M2.7-highspeed',
         max_tokens: 800,
-        system: `You are a professional work assistant. Summarise the notes for this specific work sub-item in exactly this JSON format (no other text):
+        system: `You are a work notes summariser. Extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
+
+Return ONLY this JSON format, no other text:
 {"obj":"...","prog":"...","next":"..."}
-- obj: Key objective(s) for this item (1-2 bullet points using • separator)
-- prog: Current status/progress (1-3 sentences)
-- next: Next actions (1-2 bullet points using • separator)
-Be concise and action-oriented. Match the language of the notes (English or Chinese).`,
+
+Rules:
+- obj: ONLY objectives explicitly stated. Short bullets using •. Example: "• Grow Apple GMV". If none: "• No objectives mentioned"
+- prog: ONLY progress explicitly described. Short bullets using •. Example: "• Trade-in launched mid-March". If none: "• No progress mentioned"
+- next: ONLY next steps explicitly mentioned. Short bullets using •. Example: "• Align with team on timeline". If none: "• No next steps mentioned"
+- NEVER write sentences or paragraphs — bullets only
+- NEVER add context or details not in the notes
+- Respond in the same language as the notes (English or Chinese).`,
         messages: [{ role: 'user', content: context }]
       })
     });
@@ -1560,9 +1721,21 @@ Be concise and action-oriented. Match the language of the notes (English or Chin
     const match2 = raw2.match(/\{[\s\S]*\}/);
     if (!match2) throw new Error('No JSON in response');
     const parsed = JSON.parse(match2[0]);
-    sub.aiSummary = parsed;
+    const normParsed2 = normaliseAI(parsed);
+    // Restore locked bullets from previous sub summary
+    const existingSub = normaliseAI(sub.aiSummary);
+    if (existingSub) {
+      ['obj','prog','next'].forEach(key => {
+        const locked = (existingSub[key]||[]).filter(b => b.locked);
+        if (locked.length) {
+          const newUnlocked2 = (normParsed2[key]||[]).filter(b => !locked.some(l => l.text === b.text));
+          normParsed2[key] = [...locked, ...newUnlocked2];
+        }
+      });
+    }
+    sub.aiSummary = normParsed2;
     saveToStorage();
-    if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(parsed);
+    if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(normParsed2, tabId, subId);
     // update header pill
     const list = document.getElementById('sub-list-'+tabId);
     if (list) list.innerHTML = getSubs(tabId).map(s => renderSubItem(tabId, s)).join('');
@@ -1723,6 +1896,21 @@ async function generateAI(tabId) {
     return;
   }
 
+  // Build locked bullets context so AI preserves user edits
+  const existingAI = normaliseAI(notes.aiSummary);
+  let lockedContext = '';
+  if (existingAI) {
+    const sections = [['obj','Objectives'],['prog','Progress'],['next','Next steps']];
+    sections.forEach(([key, label]) => {
+      const locked = (existingAI[key]||[]).filter(b => b.locked);
+      if (locked.length) {
+        lockedContext += '\nKEEP THESE ' + label.toUpperCase() + ' EXACTLY (user has edited/locked them, do not change):\n';
+        locked.forEach(b => { lockedContext += '• ' + b.text + '\n'; });
+      }
+    });
+  }
+  if (lockedContext) context += '\n---' + lockedContext;
+
   if (btn) btn.disabled = true;
   if (body) body.innerHTML = `<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>`;
 
@@ -1733,14 +1921,18 @@ async function generateAI(tabId) {
       body: JSON.stringify({
         model: 'MiniMax-M2.7-highspeed',
         max_tokens: 1000,
-        system: `You are a professional work assistant helping summarize work notes.
-Based on the notes provided, extract and summarize in exactly this JSON format (no other text):
+        system: `You are a work notes summariser. Your job is to extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
+
+Return ONLY this JSON format, no other text:
 {"obj":"...","prog":"...","next":"..."}
-- obj: Major objectives across all functions (2-4 concise bullet points using • separator). For an overall summary, highlight the most important cross-function priorities.
-- prog: Latest progress/status (3-5 sentences). For an overall summary, synthesise progress across all functions, mentioning each function briefly.
-- next: Recommended next steps (2-4 concise bullet points using • separator). For an overall summary, surface the most urgent cross-function actions.
-Be concise, professional, and action-oriented.
-The user may write notes in English or Chinese — respond in the same language as their notes, or English if mixed.`,
+
+Rules:
+- obj: List ONLY objectives explicitly mentioned. Each as a short bullet using •. Example: "• Close Apple deal • Submit Q3 report". If none stated: "• No objectives mentioned"
+- prog: List ONLY progress explicitly described. Each update as a short bullet using •. Example: "• Met Apple GM on 29 Apr • Agreed on campus tour". If none: "• No progress mentioned"
+- next: List ONLY next steps explicitly mentioned. Each as a short bullet using •. Example: "• Follow up with Bart by Friday". If none: "• No next steps mentioned"
+- NEVER write sentences or paragraphs — bullets only, one line each
+- NEVER add context, inferences, or details not in the notes
+- Respond in the same language as the notes (English or Chinese).`,
         messages: [{ role: 'user', content: context }]
       })
     });
@@ -1750,9 +1942,22 @@ The user may write notes in English or Chinese — respond in the same language 
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON in response');
     const parsed = JSON.parse(match[0]);
-    notes.aiSummary = parsed;
+    // Normalise to bullet format
+    const normParsed = normaliseAI(parsed);
+    // Restore locked bullets from previous summary
+    if (existingAI) {
+      ['obj','prog','next'].forEach(key => {
+        const locked = (existingAI[key]||[]).filter(b => b.locked);
+        if (locked.length) {
+          // Keep locked bullets, replace unlocked with new AI output
+          const newUnlocked = (normParsed[key]||[]).filter(b => !locked.some(l => l.text === b.text));
+          normParsed[key] = [...locked, ...newUnlocked];
+        }
+      });
+    }
+    notes.aiSummary = normParsed;
     saveToStorage();
-    if (body) body.innerHTML = renderAISummary(parsed);
+    if (body) body.innerHTML = renderAISummary(normParsed, tabId);
   } catch(e) {
     if (body) body.innerHTML = `<p class="ai-summary-placeholder" style="color:var(--red)">Could not generate summary. Please try again.</p>`;
   }
@@ -2087,7 +2292,7 @@ async function extractTodosFromNote(text, tabId, subId) {
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
   const prompt = 'Function: ' + fnLabel + (subLabel?' / Sub-item: '+subLabel:'') +
     '\nNote: ' + text +
-    '\n\nExtract actionable todo items. Return ONLY a JSON array, no other text:\n[{"task":"...","pic":"...","due":"...","catchup":"..."}]\n- task: action description (same language as note)\n- pic: person responsible (empty if not mentioned)\n- due: ISO date YYYY-MM-DD if mentioned, else empty\n- catchup: follow-up date YYYY-MM-DD (1 week from today if time-sensitive, else empty)\nToday is ' + new Date().toISOString().slice(0,10) + '.\nIf no actionable items, return [].';
+    '\n\nExtract ONLY explicitly stated action items. Do NOT infer tasks not clearly written.\nReturn ONLY a JSON array, no other text:\n[{"task":"...","pic":"...","due":"...","catchup":"..."}]\n- task: copy exact wording from note (same language)\n- pic: person explicitly named, empty if not stated\n- due: date explicitly mentioned as YYYY-MM-DD, empty if not stated\n- catchup: empty unless explicitly mentioned\nNever invent tasks, people or dates not in the note.\nToday is ' + new Date().toISOString().slice(0,10) + '.\nIf no actionable items, return [].';
   try {
     const resp = await fetch('/api/claude', {
       method: 'POST',
@@ -2308,6 +2513,33 @@ async function startSession(userId, email) {
   render();
   autoRegenerateAll();
 }
+
+
+// ─── BULLET EVENT DELEGATION ─────────────────────────────────────
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const bullet = btn.closest('.ai-bullet');
+
+  if (action === 'del' && bullet) {
+    e.preventDefault();
+    deleteBullet(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
+  } else if (action === 'lock' && bullet) {
+    e.preventDefault();
+    toggleBulletLock(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
+  } else if (action === 'add') {
+    e.preventDefault();
+    addBullet(btn.dataset.ctx, btn.dataset.id, btn.dataset.sub, btn.dataset.sec);
+  }
+});
+
+document.addEventListener('focusout', function(e) {
+  if (!e.target.classList.contains('ai-bullet-text')) return;
+  const bullet = e.target.closest('.ai-bullet');
+  if (!bullet) return;
+  saveBulletEdit(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx), e.target.innerText);
+});
 
 // ─── INIT ────────────────────────────────────────────────────────
 (async () => {
