@@ -1624,8 +1624,8 @@ function confirmAddFn() {
 }
 
 // Click outside modal to close
-document.getElementById('modal-add').onclick = (e) => { if(e.target===e.currentTarget) closeModal(); };
-document.getElementById('modal-del').onclick = (e) => { if(e.target===e.currentTarget) closeDelModal(); };
+
+
 
 // Close mobile drawer when clicking main content
 
@@ -2303,6 +2303,8 @@ async function startSession(userId, email) {
 (async () => {
   document.getElementById('modal-todo-review').onclick = function(e) { if(e.target===e.currentTarget) closeTodoReview(); };
   document.getElementById('modal-add-todo').onclick    = function(e) { if(e.target===e.currentTarget) closeAddTodoModal(); };
+  document.getElementById('modal-add').onclick         = function(e) { if(e.target===e.currentTarget) closeModal(); };
+  document.getElementById('modal-del').onclick         = function(e) { if(e.target===e.currentTarget) closeDelModal(); };
 
   // Enter key on auth inputs
   ['login-email','login-password'].forEach(id => {
@@ -2314,22 +2316,30 @@ async function startSession(userId, email) {
 
   if (sb) {
     // Hide demo note if Supabase is configured
-    document.getElementById('auth-demo-note').style.display = 'none';
+    const demoNote = document.getElementById('auth-demo-note');
+    if (demoNote) demoNote.style.display = 'none';
 
-    // Listen for auth state changes (login, logout, token refresh)
-    sb.auth.onAuthStateChange(async (event, session) => {
-      if (session && session.user) {
-        await startSession(session.user.id, session.user.email);
-      } else if (event === 'SIGNED_OUT') {
-        // handled by doLogout
-      }
-    });
+    let sessionStarted = false;
 
-    // Check for existing session on load
+    // Check for existing session on load first
     const { data: { session } } = await sb.auth.getSession();
     if (session && session.user) {
+      sessionStarted = true;
       await startSession(session.user.id, session.user.email);
     }
+
+    // Listen for auth state changes (login after page load, token refresh)
+    sb.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session && session.user && !sessionStarted) {
+        sessionStarted = true;
+        await startSession(session.user.id, session.user.email);
+      } else if (event === 'SIGNED_IN' && session && session.user && sessionStarted) {
+        // Already started — just re-render to refresh UI
+        render();
+      } else if (event === 'SIGNED_OUT') {
+        sessionStarted = false;
+      }
+    });
     // else: auth overlay stays visible
   } else {
     // No Supabase configured — run in localStorage demo mode
