@@ -2293,31 +2293,38 @@ function addTodo(fields) {
 
 // ─── AI TODO EXTRACTION ───────────────────────────────────────────
 async function extractTodosFromNote(text, tabId, subId) {
-  if (!text || text.length < 20) return [];
+  if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'Function: ' + fnLabel + (subLabel?' / Sub-item: '+subLabel:'') +
+  const prompt = 'You are a task extractor. Read this work note and extract any action items or tasks mentioned.' +
+    ' Return a JSON array only, no explanation. Each item: {"task":"...","pic":"...","due":"...","catchup":"..."}' +
+    ' where task is the action (required), pic is who is responsible (empty string if unknown),' +
+    ' due is deadline as YYYY-MM-DD (empty if not mentioned), catchup is follow-up date as YYYY-MM-DD (empty if not mentioned).' +
+    ' If no tasks found, return [].' +
+    '\n\nContext: ' + fnLabel + (subLabel ? ' / ' + subLabel : '') +
     '\nNote: ' + text +
-    '\n\nExtract ONLY explicitly stated action items. Do NOT infer tasks not clearly written.\nReturn ONLY a JSON array, no other text:\n[{"task":"...","pic":"...","due":"...","catchup":"..."}]\n- task: copy exact wording from note (same language)\n- pic: person explicitly named, empty if not stated\n- due: date explicitly mentioned as YYYY-MM-DD, empty if not stated\n- catchup: empty unless explicitly mentioned\nNever invent tasks, people or dates not in the note.\nToday is ' + new Date().toISOString().slice(0,10) + '.\nIf no actionable items, return [].';
+    '\nToday: ' + new Date().toISOString().slice(0,10);
   try {
     const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 400,
+        max_tokens: 600,
         messages: [{ role: 'user', content: prompt }]
       })
     });
     const data = await resp.json();
-    // Get only text blocks (skip thinking blocks)
     const textBlocks = (data.content||[]).filter(b => b.type === 'text');
     const raw = textBlocks.map(b => b.text).join('');
-    // Extract JSON array from response robustly
-    const match = raw.match(/\[\s*[\s\S]*\]/);
-    if (!match) return [];
+    console.log('Todo extraction raw:', raw.slice(0, 300));
+    // Extract JSON array robustly — handle markdown code blocks too
+    const clean = raw.replace(/```json|```/gi, '').trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (!match) { console.warn('No JSON array found in:', clean.slice(0,200)); return []; }
     const parsed = JSON.parse(match[0]);
-    return Array.isArray(parsed) ? parsed : [];
+    console.log('Todos extracted:', parsed.length);
+    return Array.isArray(parsed) ? parsed.filter(t => t.task && t.task.trim()) : [];
   } catch(e) {
     console.warn('Todo extraction failed:', e);
     return [];
