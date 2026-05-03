@@ -1683,7 +1683,9 @@ async function generateSubAI(tabId, subId) {
     return;
   }
 
-  if (aiBodyEl) aiBodyEl.innerHTML = `<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>`;
+  const subBtn = document.querySelector(`[onclick="generateSubAI('${tabId}','${subId}')"]`);
+  if (subBtn) { subBtn.disabled = true; subBtn.textContent = '↻ …'; }
+  if (aiBodyEl) aiBodyEl.innerHTML = '<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>';
 
   let context = `Function: ${fnLabel} — Sub-item: ${sub.label}
 
@@ -1703,8 +1705,8 @@ async function generateSubAI(tabId, subId) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'MiniMax-M2.7-highspeed',
-        max_tokens: 800,
+        model: 'MiniMax-M2.7',
+        max_tokens: 400,
         system: `You are a work notes summariser. Extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1915,16 +1917,16 @@ async function generateAI(tabId) {
   }
   if (lockedContext) context += '\n---' + lockedContext;
 
-  if (btn) btn.disabled = true;
-  if (body) body.innerHTML = `<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>`;
+  if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
+  if (body) body.innerHTML = '<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>';
 
   try {
     const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'MiniMax-M2.7-highspeed',
-        max_tokens: 1000,
+        model: 'MiniMax-M2.7',
+        max_tokens: 500,
         system: `You are a work notes summariser. Your job is to extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1965,7 +1967,7 @@ Rules:
   } catch(e) {
     if (body) body.innerHTML = `<p class="ai-summary-placeholder" style="color:var(--red)">Could not generate summary. Please try again.</p>`;
   }
-  if (btn) btn.disabled = false;
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Regenerate'; }
 }
 
 
@@ -2303,7 +2305,7 @@ async function extractTodosFromNote(text, tabId, subId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 800,
+        max_tokens: 400,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -2516,7 +2518,7 @@ async function startSession(userId, email) {
   await loadFromStorage();
   render();
   const _pb = document.getElementById('page-body'); if (_pb) wireBulletEvents(_pb);
-  autoRegenerateAll();
+  // AI summaries only regenerate when user clicks Regenerate
 }
 
 
@@ -2594,7 +2596,7 @@ wireBulletEvents(document);
     // No Supabase configured — run in localStorage demo mode
     await loadFromStorage();
     render();
-    autoRegenerateAll();
+    // AI summaries only regenerate when user clicks Regenerate
     // Show app but keep demo note visible so user knows to configure
     hideAuthOverlay('demo');
   }
