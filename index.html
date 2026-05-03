@@ -251,23 +251,13 @@
     line-height: 1.6;
   }
 
-  .ai-section {
-    margin-bottom: 12px;
-  }
+  .ai-section { margin-bottom: 8px; }
   .ai-section:last-child { margin-bottom: 0; }
   .ai-section-label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text3);
-    margin-bottom: 5px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--text3); margin-bottom: 2px;
   }
-  .ai-section-text {
-    font-size: 13.5px;
-    color: var(--text);
-    line-height: 1.65;
-  }
+  .ai-section-text { font-size: 13px; color: var(--text); line-height: 1.5; }
 
   .ai-loading {
     display: flex;
@@ -844,42 +834,41 @@
 
 
   /* ─── AI SUMMARY BULLETS ─────────────────────────────────────── */
-  .ai-bullets { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; }
+  .ai-bullets { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; }
   .ai-bullet {
-    display: flex; align-items: flex-start; gap: 8px;
-    padding: 4px 6px; border-radius: 6px; transition: background 0.1s;
-    group: true;
+    display: flex; align-items: center; gap: 6px;
+    padding: 2px 4px; border-radius: 5px; transition: background 0.1s; position: relative;
   }
   .ai-bullet:hover { background: var(--bg2); }
-  .ai-bullet-dot { color: var(--accent); font-size: 12px; flex-shrink: 0; padding-top: 3px; font-weight: 700; }
+  .ai-bullet-dot { color: var(--accent); font-size: 11px; flex-shrink: 0; font-weight: 700; line-height: 1; }
   .ai-bullet-text {
-    font-size: 13.5px; color: var(--text); line-height: 1.6; flex: 1;
-    outline: none; border-radius: 4px;
+    font-size: 13px; color: var(--text); line-height: 1.45; flex: 1;
+    outline: none; border-radius: 4px; padding: 1px 2px;
   }
   .ai-bullet-text[contenteditable=true]:focus {
-    background: var(--surface); box-shadow: 0 0 0 2px var(--accent); padding: 2px 6px;
+    background: var(--surface); box-shadow: 0 0 0 2px var(--accent); padding: 1px 5px;
   }
-  .ai-bullet-text.locked { font-style: normal; }
   .ai-bullet-actions {
-    display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
+    display: flex; gap: 1px; opacity: 0; transition: opacity 0.1s; flex-shrink: 0;
   }
   .ai-bullet:hover .ai-bullet-actions { opacity: 1; }
   .ai-bullet-btn {
-    width: 22px; height: 22px; border-radius: 4px; border: none;
+    width: 20px; height: 20px; border-radius: 3px; border: none;
     background: none; cursor: pointer; display: flex; align-items: center;
-    justify-content: center; font-size: 11px; color: var(--text3); transition: all 0.1s;
+    justify-content: center; font-size: 10px; color: var(--text3); transition: all 0.1s; padding: 0;
   }
   .ai-bullet-btn:hover { background: var(--bg3); color: var(--text); }
   .ai-bullet-btn.del:hover { background: var(--red-light); color: var(--red); }
+  .ai-bullet-btn.copy:hover { background: var(--accent-light); color: var(--accent); }
   .ai-bullet-btn.lock-on { color: var(--accent); opacity: 1 !important; }
-  .ai-bullet.editing .ai-bullet-actions { opacity: 1; }
-  .ai-section-actions { display: flex; gap: 6px; margin-top: 6px; }
-  .ai-add-btn {
-    font-size: 12px; padding: 3px 10px; border-radius: 20px;
+  /* inline + add button at end of list */
+  .ai-add-inline {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; padding: 1px 8px; border-radius: 20px; margin-top: 3px;
     border: 1px dashed var(--border2); background: none; color: var(--text3);
     cursor: pointer; transition: all 0.15s;
   }
-  .ai-add-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  .ai-add-inline:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
   @media (max-width: 600px) { .ai-bullet-actions { opacity: 1; } }
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1349,26 +1338,30 @@ function normaliseAI(ai) {
 }
 
 function renderBullets(bullets, sectionKey, ctxType, ctxId, ctxSub) {
-  if (!bullets || !bullets.length) return '<p class="ai-summary-placeholder" style="font-size:13px;">—</p>';
+  if (!bullets || !bullets.length) {
+    return '<div><p class="ai-summary-placeholder" style="font-size:12px;margin:2px 0 4px;">—</p>' +
+      '<button class="ai-add-inline" data-action="add" data-ctx="' + ctxType + '" data-id="' + escAttr(ctxId) + '" data-sub="' + escAttr(ctxSub||'') + '" data-sec="' + sectionKey + '">+ add</button></div>';
+  }
   var sub = ctxSub || '';
   var html = '<div class="ai-bullets">';
   bullets.forEach(function(b, i) {
     var lockClass = b.locked ? ' lock-on' : '';
     var lockIcon = b.locked ? '&#128274;' : '&#128275;';
-    var lockTip = b.locked ? 'Locked' : 'Unlocked';
+    var lockTip = b.locked ? 'Locked — AI keeps this' : 'Unlocked';
     html += '<div class="ai-bullet"' +
       ' data-ctx="' + ctxType + '" data-id="' + escAttr(ctxId) + '"' +
       ' data-sub="' + escAttr(sub) + '" data-sec="' + sectionKey + '" data-idx="' + i + '">' +
       '<span class="ai-bullet-dot">•</span>' +
       '<span class="ai-bullet-text" contenteditable="true">' + escHtml(b.text) + '</span>' +
       '<div class="ai-bullet-actions">' +
+        '<button class="ai-bullet-btn copy" data-action="copy" title="Copy">&#128203;</button>' +
         '<button class="ai-bullet-btn' + lockClass + '" data-action="lock" title="' + lockTip + '">' + lockIcon + '</button>' +
         '<button class="ai-bullet-btn del" data-action="del" title="Delete">&#10005;</button>' +
       '</div></div>';
   });
-  html += '<button class="ai-add-btn" data-action="add"' +
+  html += '</div><button class="ai-add-inline" data-action="add"' +
     ' data-ctx="' + ctxType + '" data-id="' + escAttr(ctxId) + '"' +
-    ' data-sub="' + escAttr(sub) + '" data-sec="' + sectionKey + '">+ add</button></div>';
+    ' data-sub="' + escAttr(sub) + '" data-sec="' + sectionKey + '">+ add</button>';
   return html;
 }
 function escAttr(s) { return (s||'').replace(/"/g,'&quot;'); }
@@ -2568,7 +2561,13 @@ function wireBulletEvents(root) {
     if (!btn) return;
     const action = btn.dataset.action;
     const bullet = btn.closest('.ai-bullet');
-    if (action === 'del' && bullet) {
+    if (action === 'copy' && bullet) {
+      e.preventDefault(); e.stopPropagation();
+      const txt = bullet.querySelector('.ai-bullet-text');
+      if (txt) navigator.clipboard.writeText(txt.innerText || txt.textContent).catch(function(){});
+      btn.textContent = '&#10003;';
+      setTimeout(function(){ btn.innerHTML = '&#128203;'; }, 1200);
+    } else if (action === 'del' && bullet) {
       e.preventDefault(); e.stopPropagation();
       deleteBullet(bullet.dataset.ctx, bullet.dataset.id, bullet.dataset.sub, bullet.dataset.sec, parseInt(bullet.dataset.idx));
     } else if (action === 'lock' && bullet) {
