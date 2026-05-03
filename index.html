@@ -1562,7 +1562,7 @@ function onTodayInput(tabId) {
   }, 800);
 }
 
-async function saveToday(tabId) {
+function saveToday(tabId) {
   const input = document.getElementById('today-input-'+tabId);
   const text = (input.value || '').trim();
   if (!text) return;
@@ -1572,19 +1572,9 @@ async function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
-  // Show popup instantly with quick local detection, then improve with AI
-  const quick = quickDetectTodos(text, tabId, null);
-  if (quick.length) openTodoReview(quick, tabId, null, true); // true = AI upgrading
-  // AI runs in background and updates the open popup
-  try {
-    const extracted = await extractTodosFromNote(text, tabId, null);
-    if (extracted && extracted.length) {
-      if (quick.length) upgradeReviewWithAI(extracted, tabId, null);
-      else openTodoReview(extracted, tabId, null, false);
-    } else if (!quick.length) {
-      // AI found nothing and quick found nothing — do nothing
-    }
-  } catch(e) {}
+  // Instant local detection — no API call
+  const todos = quickDetectTodos(text, tabId, null);
+  if (todos.length) openTodoReview(todos, tabId, null, false);
 }
 
 function toggleSub(tabId, subId) {
@@ -1632,15 +1622,8 @@ async function saveSubToday(tabId, subId) {
       ? subs.map(s => renderSubItem(tabId, s)).join('')
       : '<div class="empty-state">No sub-items yet</div>';
   }
-  const quick2 = quickDetectTodos(text, tabId, subId);
-  if (quick2.length) openTodoReview(quick2, tabId, subId, true);
-  try {
-    const extracted = await extractTodosFromNote(text, tabId, subId);
-    if (extracted && extracted.length) {
-      if (quick2.length) upgradeReviewWithAI(extracted, tabId, subId);
-      else openTodoReview(extracted, tabId, subId, false);
-    }
-  } catch(e) {}
+  const todos2 = quickDetectTodos(text, tabId, subId);
+  if (todos2.length) openTodoReview(todos2, tabId, subId, false);
 }
 
 function deleteSubNote(tabId, subId, noteId) {
@@ -2306,21 +2289,21 @@ function addTodo(fields) {
 
 // ─── QUICK LOCAL TODO DETECTION (instant, no API) ────────────────
 function quickDetectTodos(text, tabId, subId) {
-  // Simple heuristic: detect sentences with action keywords
-  const actionWords = /\b(need to|need|follow up|follow-up|check|confirm|send|review|discuss|schedule|prepare|update|submit|contact|call|email|arrange|plan|book|complete|finish|deadline|by [A-Za-z]+day|by \d|asap|urgent|action|todo|to-do|will|should|must)\b/i;
+  const actionRe = /\b(need to|needs to|follow up|follow-up|to follow|check with|confirm|send|review|discuss|schedule|prepare|update|submit|contact|call|email|arrange|plan|book|complete|finish|deadline|by [A-Za-z]+day|by \d|asap|urgent|action item|todo|to-do|will need|should|must|pending|waiting for|chase)\b/i;
   const sentences = text.split(/[.!?\n;]+/).map(s => s.trim()).filter(s => s.length > 8);
   const todos = [];
-  sentences.forEach(s => {
-    if (actionWords.test(s)) {
-      // Try to extract a name (word after "with" or before "to")
-      const picMatch = s.match(/\bwith ([A-Z][a-z]+ ?[A-Z]?[a-z]*)/);
-      const pic = picMatch ? picMatch[1] : '';
-      // Try to extract a date
-      const dateMatch = s.match(/(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
-      todos.push({ task: s.length > 80 ? s.slice(0, 80) + '…' : s, pic, due: '', catchup: '', _quickDetected: true });
-    }
+  sentences.forEach(function(s) {
+    if (!actionRe.test(s)) return;
+    // Extract first name only (one capitalised word after with/from/ping/ask)
+    const picMatch = s.match(/\b(?:with|from|cc|ping|ask) ([A-Z][a-z]{1,15})\b/);
+    const pic = picMatch ? picMatch[1] : '';
+    // Extract ISO date if present
+    const dateMatch = s.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+    const due = dateMatch ? dateMatch[1] : '';
+    const task = s.replace(/^(today |yesterday |this week |just |already |also )/i, '').trim();
+    todos.push({ task: task.length > 100 ? task.slice(0, 100) + '\u2026' : task, pic: pic, due: due, catchup: '' });
   });
-  return todos.slice(0, 5); // max 5 quick todos
+  return todos.slice(0, 5);
 }
 
 // ─── UPGRADE REVIEW POPUP WITH AI RESULTS ────────────────────────
@@ -2385,18 +2368,7 @@ function openTodoReview(todos, fnId, subId, aiUpgrading) {
   const list = document.getElementById('todo-review-list');
   if (!list) return;
   list.innerHTML = reviewTodosData.map(function(t,i) { return renderReviewItem(t,i); }).join('');
-  // Show AI upgrading note if using quick detection
-  if (aiUpgrading) {
-    const note = document.createElement('div');
-    note.id = 'todo-review-ai-note';
-    note.style.cssText = 'font-size:12px;color:var(--text3);padding:8px 2px;display:flex;align-items:center;gap:6px;';
-    note.innerHTML = '<div class="ai-loading-dots" style="display:inline-flex;gap:2px">' +
-      '<span style="width:4px;height:4px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite ease-in-out;display:inline-block"></span>' +
-      '<span style="width:4px;height:4px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite ease-in-out;animation-delay:0.2s;display:inline-block"></span>' +
-      '<span style="width:4px;height:4px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite ease-in-out;animation-delay:0.4s;display:inline-block"></span>' +
-      '</div><span>AI is refining these…</span>';
-    list.parentNode.insertBefore(note, list);
-  }
+
   const modal = document.getElementById('modal-todo-review');
   if (!modal) return;
   modal.classList.add('show');
