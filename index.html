@@ -1572,10 +1572,16 @@ async function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
-  // AI todo extraction (non-blocking)
-  const extracted = await extractTodosFromNote(text, tabId, null);
-  if (extracted && extracted.length) {
-    openTodoReview(extracted, tabId, null);
+  // AI todo extraction
+  console.log('saveToday: extracting todos from text length', text.length);
+  try {
+    const extracted = await extractTodosFromNote(text, tabId, null);
+    console.log('saveToday: extracted', extracted ? extracted.length : 'null', 'todos');
+    if (extracted && extracted.length) {
+      openTodoReview(extracted, tabId, null);
+    }
+  } catch(e) {
+    console.error('saveToday extraction error:', e);
   }
 }
 
@@ -2335,11 +2341,15 @@ async function extractTodosFromNote(text, tabId, subId) {
 let reviewTodosData = [];
 
 function openTodoReview(todos, fnId, subId) {
-  if (!todos.length) return;
+  if (!todos.length) { console.log('openTodoReview: no todos to show'); return; }
+  console.log('openTodoReview: showing', todos.length, 'todos');
   reviewTodosData = todos.map(t => Object.assign({}, t, { fnId: fnId, subId: subId, _selected: true }));
   const list = document.getElementById('todo-review-list');
+  if (!list) { console.error('todo-review-list element not found!'); return; }
   list.innerHTML = reviewTodosData.map(function(t,i) { return renderReviewItem(t,i); }).join('');
-  document.getElementById('modal-todo-review').classList.add('show');
+  const modal = document.getElementById('modal-todo-review');
+  if (!modal) { console.error('modal-todo-review element not found!'); return; }
+  modal.classList.add('show');
 }
 
 function renderReviewItem(t, i) {
