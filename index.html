@@ -1572,15 +1572,16 @@ async function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
-  // AI todo extraction
-  console.log('saveToday: extracting todos from text length', text.length);
+  // Show scanning indicator in the history footer area
+  showTodoScanIndicator(tabId, true);
   try {
     const extracted = await extractTodosFromNote(text, tabId, null);
-    console.log('saveToday: extracted', extracted ? extracted.length : 'null', 'todos');
+    showTodoScanIndicator(tabId, false);
     if (extracted && extracted.length) {
       openTodoReview(extracted, tabId, null);
     }
   } catch(e) {
+    showTodoScanIndicator(tabId, false);
     console.error('saveToday extraction error:', e);
   }
 }
@@ -1630,10 +1631,16 @@ async function saveSubToday(tabId, subId) {
       ? subs.map(s => renderSubItem(tabId, s)).join('')
       : '<div class="empty-state">No sub-items yet</div>';
   }
-  // AI todo extraction (non-blocking)
-  const extracted = await extractTodosFromNote(text, tabId, subId);
-  if (extracted && extracted.length) {
-    openTodoReview(extracted, tabId, subId);
+  // AI todo extraction
+  showTodoScanIndicator(tabId + '_' + subId, true);
+  try {
+    const extracted = await extractTodosFromNote(text, tabId, subId);
+    showTodoScanIndicator(tabId + '_' + subId, false);
+    if (extracted && extracted.length) {
+      openTodoReview(extracted, tabId, subId);
+    }
+  } catch(e) {
+    showTodoScanIndicator(tabId + '_' + subId, false);
   }
 }
 
@@ -2297,6 +2304,32 @@ function addTodo(fields) {
   if (state.activeTab === 'todos') renderTodosPage();
 }
 
+// ─── TODO SCAN INDICATOR ────────────────────────────────────────
+function showTodoScanIndicator(key, show) {
+  // Show/hide a small pill indicator near the history section
+  const existingId = 'todo-scan-' + key.replace(/[^a-z0-9]/gi, '_');
+  let el = document.getElementById(existingId);
+  if (show) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = existingId;
+      el.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;' +
+        'background:var(--accent);color:white;font-size:12px;font-weight:500;' +
+        'padding:8px 14px;border-radius:20px;box-shadow:0 2px 12px rgba(0,0,0,0.15);' +
+        'display:flex;align-items:center;gap:7px;';
+      el.innerHTML = '<div class="ai-loading-dots" style="display:inline-flex;gap:3px">' +
+        '<span style="width:5px;height:5px;border-radius:50%;background:white;animation:bounce 1.2s infinite ease-in-out;display:inline-block"></span>' +
+        '<span style="width:5px;height:5px;border-radius:50%;background:white;animation:bounce 1.2s infinite ease-in-out;animation-delay:0.2s;display:inline-block"></span>' +
+        '<span style="width:5px;height:5px;border-radius:50%;background:white;animation:bounce 1.2s infinite ease-in-out;animation-delay:0.4s;display:inline-block"></span>' +
+        '</div> Scanning for todos…';
+      document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+  } else {
+    if (el) el.remove();
+  }
+}
+
 // ─── AI TODO EXTRACTION ───────────────────────────────────────────
 async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
@@ -2323,13 +2356,11 @@ async function extractTodosFromNote(text, tabId, subId) {
     const data = await resp.json();
     const textBlocks = (data.content||[]).filter(b => b.type === 'text');
     const raw = textBlocks.map(b => b.text).join('');
-    console.log('Todo extraction raw:', raw.slice(0, 300));
-    // Extract JSON array robustly — handle markdown code blocks too
+      // Extract JSON array robustly — handle markdown code blocks too
     const clean = raw.replace(/```json|```/gi, '').trim();
     const match = clean.match(/\[[\s\S]*\]/);
     if (!match) { console.warn('No JSON array found in:', clean.slice(0,200)); return []; }
     const parsed = JSON.parse(match[0]);
-    console.log('Todos extracted:', parsed.length);
     return Array.isArray(parsed) ? parsed.filter(t => t.task && t.task.trim()) : [];
   } catch(e) {
     console.warn('Todo extraction failed:', e);
@@ -2342,7 +2373,6 @@ let reviewTodosData = [];
 
 function openTodoReview(todos, fnId, subId) {
   if (!todos.length) { console.log('openTodoReview: no todos to show'); return; }
-  console.log('openTodoReview: showing', todos.length, 'todos');
   reviewTodosData = todos.map(t => Object.assign({}, t, { fnId: fnId, subId: subId, _selected: true }));
   const list = document.getElementById('todo-review-list');
   if (!list) { console.error('todo-review-list element not found!'); return; }
