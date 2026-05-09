@@ -2411,19 +2411,20 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'Extract action items from this work note. Notes may describe past events — still extract future actions agreed upon or recommended.' +
-    ' Return JSON array only: [{"task":"<verb + action>","pic":"<person or empty>","due":"<YYYY-MM-DD or empty>","catchup":"<YYYY-MM-DD or empty>"}]' +
-    ' Return [] if no actions.' +
-    '\nContext: ' + fnLabel + (subLabel ? ' > ' + subLabel : '') +
-    '\nNote: ' + text +
-    '\nToday: ' + new Date().toISOString().slice(0,10);
+  const prompt = 'You extract action items from work notes. Even when a note describes a past event (meeting, discussion), extract any future actions that were agreed upon or recommended.\n\n' +
+    'Return a JSON array only — no explanation, no markdown. Example: [{"task":"Follow up with John","pic":"John","due":"","catchup":"2026-05-12"}]\n' +
+    'Fields: task (required, starts with a verb), pic (person responsible or ""), due (deadline YYYY-MM-DD or ""), catchup (check-in date YYYY-MM-DD or "").\n' +
+    'Return [] if there are no action items.\n\n' +
+    'Context: ' + fnLabel + (subLabel ? ' > ' + subLabel : '') + '\n' +
+    'Note: ' + text + '\n' +
+    'Today: ' + new Date().toISOString().slice(0,10);
   try {
     const resp = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 150,
+        max_tokens: 250,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -2432,9 +2433,11 @@ async function extractTodosFromNote(text, tabId, subId) {
     const raw = textBlocks.map(b => b.text).join('');
       // Extract JSON array robustly — handle markdown code blocks too
     const clean = raw.replace(/```json|```/gi, '').trim();
+    console.log('Todo extraction raw:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
-    if (!match) { console.warn('No JSON array found in:', clean.slice(0,200)); return []; }
+    if (!match) { console.warn('No JSON array found in todo response:', clean.slice(0,200)); return []; }
     const parsed = JSON.parse(match[0]);
+    console.log('Todo extraction parsed:', parsed);
     return Array.isArray(parsed) ? parsed.filter(t => t.task && t.task.trim()) : [];
   } catch(e) {
     console.warn('Todo extraction failed:', e);
