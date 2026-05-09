@@ -2411,20 +2411,24 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'Extract action items from this work note. Notes often describe past events (meetings, discussions) — extract any future actions agreed upon or recommended.\n\n' +
-    'Context: ' + fnLabel + (subLabel ? ' > ' + subLabel : '') + '\n' +
-    'Note: ' + text + '\n' +
-    'Today: ' + new Date().toISOString().slice(0,10);
+  const today = new Date().toISOString().slice(0,10);
+  const prompt = 'Here is a work note from ' + fnLabel + (subLabel ? ' > ' + subLabel : '') + ':\n\n"' + text + '"\n\n' +
+    'Today is ' + today + '. What tasks or actions need to be done based on this note? ' +
+    'Include anything that was recommended, agreed upon, or needs to be prepared, reviewed, or followed up. ' +
+    'Output a JSON array only.';
   try {
     const fullText = await streamFetch({
       model: 'MiniMax-M2.7',
       max_tokens: 1000,
-      system: 'You are a task extractor. Output a JSON array of action items only — no explanation, no markdown.\n' +
-        'Format: [{"task":"<verb + action>","pic":"<person or empty string>","due":"<YYYY-MM-DD or empty string>","catchup":"<YYYY-MM-DD or empty string>"}]\n' +
-        'Example: [{"task":"Prepare for CF meeting","pic":"","due":"","catchup":"2026-05-12"},{"task":"Review with Ian","pic":"Ian","due":"","catchup":"2026-05-12"}]\n' +
-        'Return [] if there are no clear action items.',
+      system: 'You extract tasks from work notes and output them as a JSON array. ' +
+        'Work notes often describe past events (meetings, calls, discussions) — always extract any actions, preparations, or follow-ups that were mentioned or recommended, even if phrased in past tense.\n\n' +
+        'Output ONLY a valid JSON array, no other text:\n' +
+        '[{"task":"Prepare for CF meeting","pic":"","due":"","catchup":"2026-05-12"},{"task":"Review with Ian","pic":"Ian","due":"","catchup":""}]\n\n' +
+        'Fields: task (required, verb + what to do), pic (person responsible, empty string if unknown), ' +
+        'due (hard deadline as YYYY-MM-DD, empty string if none), catchup (check-in date as YYYY-MM-DD, empty string if none).\n' +
+        'If the note mentions absolutely nothing to do, output: []',
       messages: [{ role: 'user', content: prompt }]
-    }, chunk => { console.log('Todo stream chunk:', chunk.slice(-50)); });
+    }, chunk => { console.log('Todo stream chunk:', chunk.slice(-80)); });
     const clean = fullText.replace(/```json|```/gi, '').trim();
     console.log('Todo extraction text:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
