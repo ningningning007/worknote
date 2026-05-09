@@ -2428,11 +2428,10 @@ async function extractTodosFromNote(text, tabId, subId) {
         'due (hard deadline as YYYY-MM-DD, empty string if none), catchup (check-in date as YYYY-MM-DD, empty string if none).\n' +
         'If the note mentions absolutely nothing to do, output: []',
       messages: [{ role: 'user', content: prompt }]
-    }, chunk => { console.log('Todo stream chunk:', chunk.slice(-80)); });
+    }, null);
     const clean = fullText.replace(/```json|```/gi, '').trim();
-    console.log('Todo extraction text:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
-    if (!match) { console.warn('No JSON array in todo response:', clean.slice(0, 200)); return []; }
+    if (!match) return [];
     const parsed = JSON.parse(match[0]);
     return Array.isArray(parsed) ? parsed.filter(t => t.task && t.task.trim()) : [];
   } catch(e) {
