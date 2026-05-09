@@ -1641,17 +1641,8 @@ function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
-  const todos = quickDetectTodos(text, tabId, null);
-  if (todos.length) openTodoReview(todos, tabId, null, true);
   extractTodosFromNote(text, tabId, null).then(aiTodos => {
-    if (aiTodos.length) {
-      const modal = document.getElementById('modal-todo-review');
-      if (modal && modal.classList.contains('show')) {
-        upgradeReviewWithAI(aiTodos, tabId, null);
-      } else {
-        openTodoReview(aiTodos, tabId, null, false);
-      }
-    }
+    if (aiTodos.length) openTodoReview(aiTodos, tabId, null, false);
   });
 }
 
@@ -1700,17 +1691,8 @@ async function saveSubToday(tabId, subId) {
       ? subs.map(s => renderSubItem(tabId, s)).join('')
       : '<div class="empty-state">No sub-items yet</div>';
   }
-  const todos2 = quickDetectTodos(text, tabId, subId);
-  if (todos2.length) openTodoReview(todos2, tabId, subId, true);
   extractTodosFromNote(text, tabId, subId).then(aiTodos => {
-    if (aiTodos.length) {
-      const modal = document.getElementById('modal-todo-review');
-      if (modal && modal.classList.contains('show')) {
-        upgradeReviewWithAI(aiTodos, tabId, subId);
-      } else {
-        openTodoReview(aiTodos, tabId, subId, false);
-      }
-    }
+    if (aiTodos.length) openTodoReview(aiTodos, tabId, subId, false);
   });
 }
 
@@ -2421,11 +2403,14 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'You are a task extractor. Read this work note and extract any action items or tasks mentioned.' +
+  const prompt = 'You are a task extractor. Read this work note and extract ONLY future action items — things that still need to be done, followed up, or checked on.' +
+    ' Do NOT extract things that already happened or are just background context.' +
     ' Return a JSON array only, no explanation. Each item: {"task":"...","pic":"...","due":"...","catchup":"..."}' +
-    ' where task is the action (required), pic is who is responsible (empty string if unknown),' +
-    ' due is deadline as YYYY-MM-DD (empty if not mentioned), catchup is follow-up date as YYYY-MM-DD (empty if not mentioned).' +
-    ' If no tasks found, return [].' +
+    ' where task is the specific action to take (required, start with a verb e.g. "Follow up with...", "Send...", "Check..."),' +
+    ' pic is the person responsible (empty string if unknown),' +
+    ' due is the hard deadline as YYYY-MM-DD (empty if not mentioned),' +
+    ' catchup is when to check in on this as YYYY-MM-DD (empty if not mentioned).' +
+    ' If there are no clear future action items, return [].' +
     '\n\nContext: ' + fnLabel + (subLabel ? ' / ' + subLabel : '') +
     '\nNote: ' + text +
     '\nToday: ' + new Date().toISOString().slice(0,10);
