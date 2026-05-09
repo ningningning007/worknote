@@ -1707,7 +1707,7 @@ async function generateSubAI(tabId, subId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 200,
+        max_tokens: 350,
         system: `You are a work notes summariser. Extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1748,6 +1748,7 @@ Rules:
     const list = document.getElementById('sub-list-'+tabId);
     if (list) list.innerHTML = getSubs(tabId).map(s => renderSubItem(tabId, s)).join('');
   } catch(e) {
+    console.error('generateSubAI error:', e);
     if (aiBodyEl) aiBodyEl.innerHTML = `<p class="sub-ai-placeholder" style="color:var(--red)">Could not generate summary. Try again.</p>`;
   }
 }
@@ -1934,7 +1935,7 @@ async function generateAI(tabId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 250,
+        max_tokens: 450,
         system: `You are a work notes summariser. Your job is to extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1974,6 +1975,7 @@ Rules:
     saveToStorage();
     if (body) body.innerHTML = renderAISummary(normParsed, tabId);
   } catch(e) {
+    console.error('generateAI error:', e);
     if (body) body.innerHTML = `<p class="ai-summary-placeholder" style="color:var(--red)">Could not generate summary. Please try again.</p>`;
   }
   if (btn) { btn.disabled = false; btn.textContent = '↻ Regenerate'; }
