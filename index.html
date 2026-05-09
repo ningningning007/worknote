@@ -2419,26 +2419,17 @@ async function extractTodosFromNote(text, tabId, subId) {
     'Note: ' + text + '\n' +
     'Today: ' + new Date().toISOString().slice(0,10);
   try {
-    const resp = await fetch('/api/claude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'MiniMax-M2.7',
-        max_tokens: 250,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await resp.json();
-    console.log('Todo API full response:', JSON.stringify(data).slice(0, 600));
-    if (data.error) { console.warn('Todo API error:', data.error); return []; }
-    const textBlocks = (data.content||[]).filter(b => b.type === 'text');
-    const raw = textBlocks.map(b => b.text).join('');
-    const clean = raw.replace(/```json|```/gi, '').trim();
-    console.log('Todo extraction clean text:', clean.slice(0, 300));
+    // Use streaming so thinking tokens are skipped and only text output is captured
+    const fullText = await streamFetch({
+      model: 'MiniMax-M2.7',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }]
+    }, null);
+    const clean = fullText.replace(/```json|```/gi, '').trim();
+    console.log('Todo extraction text:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
-    if (!match) { console.warn('No JSON array found in todo response:', clean.slice(0,200)); return []; }
+    if (!match) { console.warn('No JSON array in todo response:', clean.slice(0, 200)); return []; }
     const parsed = JSON.parse(match[0]);
-    console.log('Todo extraction parsed:', parsed);
     return Array.isArray(parsed) ? parsed.filter(t => t.task && t.task.trim()) : [];
   } catch(e) {
     console.warn('Todo extraction failed:', e);
