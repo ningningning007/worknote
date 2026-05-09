@@ -2403,14 +2403,14 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'You are a task extractor. Read this work note and extract ONLY future action items — things that still need to be done, followed up, or checked on.' +
-    ' Do NOT extract things that already happened or are just background context.' +
+  const prompt = 'You are a task extractor. Read this work note and identify action items — things that need to be done, followed up on, or checked in on.' +
+    ' Notes often describe past events (meetings, discussions) — still extract any future actions agreed upon or recommended within them.' +
     ' Return a JSON array only, no explanation. Each item: {"task":"...","pic":"...","due":"...","catchup":"..."}' +
-    ' where task is the specific action to take (required, start with a verb e.g. "Follow up with...", "Send...", "Check..."),' +
-    ' pic is the person responsible (empty string if unknown),' +
+    ' where task is the specific action starting with a verb (e.g. "Prepare for CF meeting", "Follow up with Ian", "Review proposal with team"),' +
+    ' pic is the person responsible (empty string if not mentioned),' +
     ' due is the hard deadline as YYYY-MM-DD (empty if not mentioned),' +
-    ' catchup is when to check in on this as YYYY-MM-DD (empty if not mentioned).' +
-    ' If there are no clear future action items, return [].' +
+    ' catchup is when to check back on this as YYYY-MM-DD (empty if not mentioned).' +
+    ' Return [] only if there are truly no actions to track at all.' +
     '\n\nContext: ' + fnLabel + (subLabel ? ' / ' + subLabel : '') +
     '\nNote: ' + text +
     '\nToday: ' + new Date().toISOString().slice(0,10);
