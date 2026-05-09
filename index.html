@@ -2411,20 +2411,20 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'You extract action items from work notes. Even when a note describes a past event (meeting, discussion), extract any future actions that were agreed upon or recommended.\n\n' +
-    'Return a JSON array only — no explanation, no markdown. Example: [{"task":"Follow up with John","pic":"John","due":"","catchup":"2026-05-12"}]\n' +
-    'Fields: task (required, starts with a verb), pic (person responsible or ""), due (deadline YYYY-MM-DD or ""), catchup (check-in date YYYY-MM-DD or "").\n' +
-    'Return [] if there are no action items.\n\n' +
+  const prompt = 'Extract action items from this work note. Notes often describe past events (meetings, discussions) — extract any future actions agreed upon or recommended.\n\n' +
     'Context: ' + fnLabel + (subLabel ? ' > ' + subLabel : '') + '\n' +
     'Note: ' + text + '\n' +
     'Today: ' + new Date().toISOString().slice(0,10);
   try {
-    // Use streaming so thinking tokens are skipped and only text output is captured
     const fullText = await streamFetch({
       model: 'MiniMax-M2.7',
       max_tokens: 1000,
+      system: 'You are a task extractor. Output a JSON array of action items only — no explanation, no markdown.\n' +
+        'Format: [{"task":"<verb + action>","pic":"<person or empty string>","due":"<YYYY-MM-DD or empty string>","catchup":"<YYYY-MM-DD or empty string>"}]\n' +
+        'Example: [{"task":"Prepare for CF meeting","pic":"","due":"","catchup":"2026-05-12"},{"task":"Review with Ian","pic":"Ian","due":"","catchup":"2026-05-12"}]\n' +
+        'Return [] if there are no clear action items.',
       messages: [{ role: 'user', content: prompt }]
-    }, null);
+    }, chunk => { console.log('Todo stream chunk:', chunk.slice(-50)); });
     const clean = fullText.replace(/```json|```/gi, '').trim();
     console.log('Todo extraction text:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
