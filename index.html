@@ -1045,6 +1045,12 @@ let catchupTarget = null; // {todoId}
 let pendingSaveTimers = {};
 let delTarget = null; // {tabId, noteId}
 
+function simpleHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return h.toString(36);
+}
+
 // ─── STORAGE ────────────────────────────────────────────────────
 let currentUserId = null;
 const LS_KEY = 'worknote_state';
@@ -1681,12 +1687,19 @@ async function generateSubAI(tabId, subId) {
   if (hist.length) {
     context += `Historical notes (newest first):
 `;
-    [...hist].reverse().slice(0,12).forEach(h => {
+    [...hist].reverse().slice(0,5).forEach(h => {
       context += `- [${h.date}] ${h.text}\n`;
     });
     context += '\n';
   }
   if (todayNote) context += `Today's draft: ${todayNote}\n`;
+
+  const contextHash = simpleHash(context);
+  if (sub.aiSummary && sub._aiHash === contextHash) {
+    if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(normaliseAI(sub.aiSummary), tabId, subId);
+    if (subBtn) { subBtn.disabled = false; subBtn.textContent = '↻ Summarise'; }
+    return;
+  }
 
   try {
     const resp = await fetch('/api/claude', {
@@ -1694,7 +1707,7 @@ async function generateSubAI(tabId, subId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 400,
+        max_tokens: 200,
         system: `You are a work notes summariser. Extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1728,6 +1741,7 @@ Rules:
       });
     }
     sub.aiSummary = normParsed2;
+    sub._aiHash = contextHash;
     saveToStorage();
     if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(normParsed2, tabId, subId);
     // update header pill
@@ -1834,7 +1848,7 @@ async function generateAI(tabId) {
       context += `=== ${sec.label} ===\n`;
       if (secHist.length) {
         context += `Historical notes (newest first):\n`;
-        [...secHist].reverse().slice(0, 8).forEach(h => {
+        [...secHist].reverse().slice(0, 4).forEach(h => {
           context += `- [${h.date}] ${h.text}\n`;
         });
       }
@@ -1845,7 +1859,7 @@ async function generateAI(tabId) {
         secSubsWithContent.forEach(s => {
           context += `  [${s.label}]\n`;
           if (s.history && s.history.length) {
-            [...s.history].reverse().slice(0,4).forEach(h => {
+            [...s.history].reverse().slice(0,2).forEach(h => {
               context += `    - [${h.date}] ${h.text}\n`;
             });
           }
@@ -1864,7 +1878,7 @@ async function generateAI(tabId) {
     context = `Function: ${fnLabel}\n\n`;
     if (hist.length) {
       context += `Historical notes (newest first):\n`;
-      [...hist].reverse().slice(0,15).forEach(h => {
+      [...hist].reverse().slice(0,7).forEach(h => {
         context += `- [${h.date}] ${h.text}\n`;
       });
       context += '\n';
@@ -1876,7 +1890,7 @@ async function generateAI(tabId) {
       subsWithContent.forEach(s => {
         context += `  [${s.label}]\n`;
         if (s.history && s.history.length) {
-          [...s.history].reverse().slice(0,5).forEach(h => {
+          [...s.history].reverse().slice(0,3).forEach(h => {
             context += `    - [${h.date}] ${h.text}\n`;
           });
         }
@@ -1905,6 +1919,12 @@ async function generateAI(tabId) {
   }
   if (lockedContext) context += '\n---' + lockedContext;
 
+  const contextHash = simpleHash(context);
+  if (notes.aiSummary && notes._aiHash === contextHash) {
+    if (body) body.innerHTML = renderAISummary(normaliseAI(notes.aiSummary), tabId);
+    return;
+  }
+
   if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
   if (body) body.innerHTML = '<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>';
 
@@ -1914,7 +1934,7 @@ async function generateAI(tabId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 500,
+        max_tokens: 250,
         system: `You are a work notes summariser. Your job is to extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
 
 Return ONLY this JSON format, no other text:
@@ -1950,6 +1970,7 @@ Rules:
       });
     }
     notes.aiSummary = normParsed;
+    notes._aiHash = contextHash;
     saveToStorage();
     if (body) body.innerHTML = renderAISummary(normParsed, tabId);
   } catch(e) {
@@ -2333,7 +2354,7 @@ async function extractTodosFromNote(text, tabId, subId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 600,
+        max_tokens: 300,
         messages: [{ role: 'user', content: prompt }]
       })
     });
