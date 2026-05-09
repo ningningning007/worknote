@@ -1051,6 +1051,76 @@ function simpleHash(str) {
   return h.toString(36);
 }
 
+async function streamFetch(payload, onChunk) {
+  const resp = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, stream: true })
+  });
+  if (!resp.ok) throw new Error('API error: ' + resp.status);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '', fullText = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') continue;
+      try {
+        const evt = JSON.parse(data);
+        const chunk = evt.delta?.text || '';
+        if (chunk) { fullText += chunk; if (onChunk) onChunk(fullText); }
+      } catch {}
+    }
+  }
+  return fullText;
+}
+
+function parseSummaryStream(text) {
+  const result = { obj: '', prog: '', next: '' };
+  for (const line of text.split('\n')) {
+    const m = line.match(/^(obj|prog|next):\s*(.*)/);
+    if (!m || !m[2].trim()) continue;
+    result[m[1]] = m[2].split('•').map(s => s.trim()).filter(Boolean).join('\n');
+  }
+  return result;
+}
+
+function renderStreamingSection(key, text, labels, sectionClass, labelClass) {
+  const allLines = text.split('\n');
+  const completeLines = allLines.slice(0, -1);
+  const curLine = allLines[allLines.length - 1] || '';
+  const done = {};
+  for (const line of completeLines) {
+    const m = line.match(/^(obj|prog|next):\s*(.*)/);
+    if (m) done[m[1]] = m[2].split('•').map(s => s.trim()).filter(Boolean);
+  }
+  const curMatch = curLine.match(/^(obj|prog|next):/);
+  const curKey = curMatch ? curMatch[1] : null;
+  return ['obj', 'prog', 'next'].map(k => {
+    const label = labels[k];
+    let content;
+    if (done[k] !== undefined) {
+      content = done[k].length
+        ? done[k].map(b => `<div style="font-size:13px;line-height:1.6;margin:2px 0;">• ${escHtml(b)}</div>`).join('')
+        : '<div style="font-size:13px;color:var(--text2);">—</div>';
+    } else if (k === curKey) {
+      const partial = curLine.slice(k.length + 1).trim();
+      const bullets = partial.split('•').map(s => s.trim()).filter(Boolean);
+      content = (bullets.length ? bullets.map(b => `<div style="font-size:13px;line-height:1.6;margin:2px 0;">• ${escHtml(b)}</div>`).join('') : '') +
+        '<span style="color:var(--accent);">▌</span>';
+    } else {
+      content = '<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div></div>';
+    }
+    return `<div class="${sectionClass}"><div class="${labelClass}">${label}</div>${content}</div>`;
+  }).join('');
+}
+
 // ─── STORAGE ────────────────────────────────────────────────────
 let currentUserId = null;
 const LS_KEY = 'worknote_state';
@@ -1720,35 +1790,33 @@ async function generateSubAI(tabId, subId) {
     return;
   }
 
-  try {
-    const resp = await fetch('/api/claude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'MiniMax-M2.7',
-        max_tokens: 350,
-        system: `You are a work notes summariser. Extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
+  const subAILabels = { obj: 'Objectives', prog: 'Latest progress', next: 'Next steps' };
+  if (aiBodyEl) aiBodyEl.innerHTML = renderStreamingSection('', '', subAILabels, 'sub-ai-section', 'sub-ai-label');
 
-Return ONLY this JSON format, no other text:
-{"obj":"...","prog":"...","next":"..."}
+  try {
+    const fullText2 = await streamFetch({
+      model: 'MiniMax-M2.7',
+      max_tokens: 350,
+      system: `You are a work notes summariser. Extract only what is explicitly stated — do NOT infer or add anything.
+
+Return ONLY in this exact format (3 lines, no other text):
+obj: <item1> • <item2>
+prog: <item1> • <item2>
+next: <item1> • <item2>
 
 Rules:
-- obj: ONLY objectives explicitly stated. Short bullets using •. Example: "• Grow Apple GMV". If none: "• No objectives mentioned"
-- prog: ONLY progress explicitly described. Short bullets using •. Example: "• Trade-in launched mid-March". If none: "• No progress mentioned"
-- next: ONLY next steps explicitly mentioned. Short bullets using •. Example: "• Align with team on timeline". If none: "• No next steps mentioned"
-- NEVER write sentences or paragraphs — bullets only
-- NEVER add context or details not in the notes
-- Respond in the same language as the notes (English or Chinese).`,
-        messages: [{ role: 'user', content: context }]
-      })
+- obj: ONLY explicitly stated objectives, separated by •. If none: "obj: No objectives mentioned"
+- prog: ONLY explicitly described progress, separated by •. If none: "prog: No progress mentioned"
+- next: ONLY explicitly mentioned next steps, separated by •. If none: "next: No next steps mentioned"
+- Short phrases only — no sentences
+- Respond in the same language as the notes (English or Chinese)`,
+      messages: [{ role: 'user', content: context }]
+    }, chunk => {
+      if (aiBodyEl) aiBodyEl.innerHTML = renderStreamingSection('', chunk, subAILabels, 'sub-ai-section', 'sub-ai-label');
     });
-    const data = await resp.json();
-    const raw2 = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const match2 = raw2.match(/\{[\s\S]*\}/);
-    if (!match2) throw new Error('No JSON in response');
-    const parsed = JSON.parse(match2[0]);
-    const normParsed2 = normaliseAI(parsed);
-    // Restore locked bullets from previous sub summary
+
+    const parsed2 = parseSummaryStream(fullText2);
+    const normParsed2 = normaliseAI(parsed2);
     const existingSub = normaliseAI(sub.aiSummary);
     if (existingSub) {
       ['obj','prog','next'].forEach(key => {
@@ -1763,7 +1831,6 @@ Rules:
     sub._aiHash = contextHash;
     saveToStorage();
     if (aiBodyEl) aiBodyEl.innerHTML = renderSubAI(normParsed2, tabId, subId);
-    // update header pill
     const list = document.getElementById('sub-list-'+tabId);
     if (list) list.innerHTML = getSubs(tabId).map(s => renderSubItem(tabId, s)).join('');
   } catch(e) {
@@ -1946,44 +2013,37 @@ async function generateAI(tabId) {
   }
 
   if (btn) { btn.disabled = true; btn.textContent = '↻ …'; }
-  if (body) body.innerHTML = '<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div> Summarising…</div>';
+  const aiLabels = { obj: 'Objectives', prog: 'Latest progress', next: 'Next steps' };
+  if (body) body.innerHTML = renderStreamingSection('', '', aiLabels, 'ai-section', 'ai-section-label');
 
   try {
-    const resp = await fetch('/api/claude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'MiniMax-M2.7',
-        max_tokens: 450,
-        system: `You are a work notes summariser. Your job is to extract only what is explicitly stated in the notes — do NOT infer, assume, or add anything beyond what is written.
+    const fullText = await streamFetch({
+      model: 'MiniMax-M2.7',
+      max_tokens: 450,
+      system: `You are a work notes summariser. Extract only what is explicitly stated — do NOT infer or add anything.
 
-Return ONLY this JSON format, no other text:
-{"obj":"...","prog":"...","next":"..."}
+Return ONLY in this exact format (3 lines, no other text):
+obj: <item1> • <item2> • <item3>
+prog: <item1> • <item2>
+next: <item1> • <item2>
 
 Rules:
-- obj: List ONLY objectives explicitly mentioned. Each as a short bullet using •. Example: "• Close Apple deal • Submit Q3 report". If none stated: "• No objectives mentioned"
-- prog: List ONLY progress explicitly described. Each update as a short bullet using •. Example: "• Met Apple GM on 29 Apr • Agreed on campus tour". If none: "• No progress mentioned"
-- next: List ONLY next steps explicitly mentioned. Each as a short bullet using •. Example: "• Follow up with Bart by Friday". If none: "• No next steps mentioned"
-- NEVER write sentences or paragraphs — bullets only, one line each
-- NEVER add context, inferences, or details not in the notes
-- Respond in the same language as the notes (English or Chinese).`,
-        messages: [{ role: 'user', content: context }]
-      })
+- obj: ONLY explicitly stated objectives, separated by •. If none: "obj: No objectives mentioned"
+- prog: ONLY explicitly described progress, separated by •. If none: "prog: No progress mentioned"
+- next: ONLY explicitly mentioned next steps, separated by •. If none: "next: No next steps mentioned"
+- Short phrases only — no sentences
+- Respond in the same language as the notes (English or Chinese)`,
+      messages: [{ role: 'user', content: context }]
+    }, chunk => {
+      if (body) body.innerHTML = renderStreamingSection('', chunk, aiLabels, 'ai-section', 'ai-section-label');
     });
 
-    const data = await resp.json();
-    const raw = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in response');
-    const parsed = JSON.parse(match[0]);
-    // Normalise to bullet format
+    const parsed = parseSummaryStream(fullText);
     const normParsed = normaliseAI(parsed);
-    // Restore locked bullets from previous summary
     if (existingAI) {
       ['obj','prog','next'].forEach(key => {
         const locked = (existingAI[key]||[]).filter(b => b.locked);
         if (locked.length) {
-          // Keep locked bullets, replace unlocked with new AI output
           const newUnlocked = (normParsed[key]||[]).filter(b => !locked.some(l => l.text === b.text));
           normParsed[key] = [...locked, ...newUnlocked];
         }
