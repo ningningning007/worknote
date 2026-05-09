@@ -2418,8 +2418,8 @@ async function extractTodosFromNote(text, tabId, subId) {
     'Output a JSON array only.';
   try {
     const fullText = await streamFetch({
-      model: 'MiniMax-M2.7',
-      max_tokens: 1000,
+      model: 'MiniMax-M2.5-highspeed',
+      max_tokens: 500,
       system: 'You extract tasks from work notes and output them as a JSON array. ' +
         'Work notes often describe past events (meetings, calls, discussions) — always extract any actions, preparations, or follow-ups that were mentioned or recommended, even if phrased in past tense.\n\n' +
         'Output ONLY a valid JSON array, no other text:\n' +
