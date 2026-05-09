@@ -1571,9 +1571,18 @@ function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
-  // Instant local detection — no API call
   const todos = quickDetectTodos(text, tabId, null);
-  if (todos.length) openTodoReview(todos, tabId, null, false);
+  if (todos.length) openTodoReview(todos, tabId, null, true);
+  extractTodosFromNote(text, tabId, null).then(aiTodos => {
+    if (aiTodos.length) {
+      const modal = document.getElementById('modal-todo-review');
+      if (modal && modal.classList.contains('show')) {
+        upgradeReviewWithAI(aiTodos, tabId, null);
+      } else {
+        openTodoReview(aiTodos, tabId, null, false);
+      }
+    }
+  });
 }
 
 function toggleSub(tabId, subId) {
@@ -1622,7 +1631,17 @@ async function saveSubToday(tabId, subId) {
       : '<div class="empty-state">No sub-items yet</div>';
   }
   const todos2 = quickDetectTodos(text, tabId, subId);
-  if (todos2.length) openTodoReview(todos2, tabId, subId, false);
+  if (todos2.length) openTodoReview(todos2, tabId, subId, true);
+  extractTodosFromNote(text, tabId, subId).then(aiTodos => {
+    if (aiTodos.length) {
+      const modal = document.getElementById('modal-todo-review');
+      if (modal && modal.classList.contains('show')) {
+        upgradeReviewWithAI(aiTodos, tabId, subId);
+      } else {
+        openTodoReview(aiTodos, tabId, subId, false);
+      }
+    }
+  });
 }
 
 function deleteSubNote(tabId, subId, noteId) {
