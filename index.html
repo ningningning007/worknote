@@ -2429,11 +2429,12 @@ async function extractTodosFromNote(text, tabId, subId) {
       })
     });
     const data = await resp.json();
+    console.log('Todo API full response:', JSON.stringify(data).slice(0, 600));
+    if (data.error) { console.warn('Todo API error:', data.error); return []; }
     const textBlocks = (data.content||[]).filter(b => b.type === 'text');
     const raw = textBlocks.map(b => b.text).join('');
-      // Extract JSON array robustly — handle markdown code blocks too
     const clean = raw.replace(/```json|```/gi, '').trim();
-    console.log('Todo extraction raw:', clean.slice(0, 300));
+    console.log('Todo extraction clean text:', clean.slice(0, 300));
     const match = clean.match(/\[[\s\S]*\]/);
     if (!match) { console.warn('No JSON array found in todo response:', clean.slice(0,200)); return []; }
     const parsed = JSON.parse(match[0]);
