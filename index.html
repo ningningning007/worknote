@@ -1641,7 +1641,11 @@ function saveToday(tabId) {
   input.value = '';
   saveToStorage();
   render();
+  const _st = document.getElementById('save-status-'+tabId);
+  if (_st) { _st.textContent = 'Checking for todos…'; _st.className = 'note-save-status'; }
   extractTodosFromNote(text, tabId, null).then(aiTodos => {
+    const _st2 = document.getElementById('save-status-'+tabId);
+    if (_st2) _st2.textContent = '';
     if (aiTodos.length) openTodoReview(aiTodos, tabId, null, false);
   });
 }
@@ -1691,7 +1695,11 @@ async function saveSubToday(tabId, subId) {
       ? subs.map(s => renderSubItem(tabId, s)).join('')
       : '<div class="empty-state">No sub-items yet</div>';
   }
+  const _sst = document.getElementById('sub-save-status-'+subId);
+  if (_sst) { _sst.textContent = 'Checking for todos…'; _sst.style.color = 'var(--text3)'; }
   extractTodosFromNote(text, tabId, subId).then(aiTodos => {
+    const _sst2 = document.getElementById('sub-save-status-'+subId);
+    if (_sst2) _sst2.textContent = '';
     if (aiTodos.length) openTodoReview(aiTodos, tabId, subId, false);
   });
 }
@@ -2403,15 +2411,10 @@ async function extractTodosFromNote(text, tabId, subId) {
   if (!text || text.length < 10) return [];
   const fnLabel = tabId === 'overview' ? 'General' : getFnLabel(tabId);
   const subLabel = subId ? getSubLabel(tabId, subId) : '';
-  const prompt = 'You are a task extractor. Read this work note and identify action items — things that need to be done, followed up on, or checked in on.' +
-    ' Notes often describe past events (meetings, discussions) — still extract any future actions agreed upon or recommended within them.' +
-    ' Return a JSON array only, no explanation. Each item: {"task":"...","pic":"...","due":"...","catchup":"..."}' +
-    ' where task is the specific action starting with a verb (e.g. "Prepare for CF meeting", "Follow up with Ian", "Review proposal with team"),' +
-    ' pic is the person responsible (empty string if not mentioned),' +
-    ' due is the hard deadline as YYYY-MM-DD (empty if not mentioned),' +
-    ' catchup is when to check back on this as YYYY-MM-DD (empty if not mentioned).' +
-    ' Return [] only if there are truly no actions to track at all.' +
-    '\n\nContext: ' + fnLabel + (subLabel ? ' / ' + subLabel : '') +
+  const prompt = 'Extract action items from this work note. Notes may describe past events — still extract future actions agreed upon or recommended.' +
+    ' Return JSON array only: [{"task":"<verb + action>","pic":"<person or empty>","due":"<YYYY-MM-DD or empty>","catchup":"<YYYY-MM-DD or empty>"}]' +
+    ' Return [] if no actions.' +
+    '\nContext: ' + fnLabel + (subLabel ? ' > ' + subLabel : '') +
     '\nNote: ' + text +
     '\nToday: ' + new Date().toISOString().slice(0,10);
   try {
@@ -2420,7 +2423,7 @@ async function extractTodosFromNote(text, tabId, subId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'MiniMax-M2.7',
-        max_tokens: 300,
+        max_tokens: 150,
         messages: [{ role: 'user', content: prompt }]
       })
     });
