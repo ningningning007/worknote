@@ -874,6 +874,24 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+
+  /* ─── SEARCH ─────────────────────────────────────────────────────── */
+  .search-wrap { position: relative; flex-shrink: 0; }
+  .search-wrap svg { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text3); }
+  .search-input { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px 5px 28px; font-family: 'Instrument Sans', sans-serif; font-size: 13px; color: var(--text); background: var(--bg); outline: none; width: 160px; transition: border-color 0.15s, width 0.2s; }
+  .search-input:focus { border-color: var(--accent); width: 220px; }
+  mark.hl { background: #FFF3A3; color: inherit; border-radius: 2px; padding: 0 1px; }
+  @media (max-width: 600px) { .search-input { width: 100px; } .search-input:focus { width: 140px; } }
+
+  /* ─── UNDO TOAST ─────────────────────────────────────────────────── */
+  #undo-toast { position: fixed; bottom: 24px; right: 24px; background: var(--text); color: var(--surface); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; display: flex; align-items: center; gap: 12px; z-index: 300; opacity: 0; transform: translateY(8px); transition: opacity 0.2s, transform 0.2s; pointer-events: none; }
+  #undo-toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  #undo-toast-btn { background: none; border: none; color: #9FD4AE; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; }
+
+  /* ─── SAVE ERROR BANNER ──────────────────────────────────────────── */
+  #save-error-banner { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--red-light); color: var(--red); border: 1px solid var(--red); border-radius: var(--radius-sm); padding: 8px 14px; font-size: 13px; z-index: 300; display: none; align-items: center; gap: 10px; }
+  #save-error-banner.show { display: flex; }
+  #save-error-x { background: none; border: none; color: var(--red); font-size: 15px; cursor: pointer; padding: 0; line-height: 1; }
 </style>
 </head>
 <body>
@@ -920,6 +938,10 @@
   <!-- Row 1: Logo + user badge -->
   <div class="topbar-row1">
     <div class="logo">WorkNote</div>
+      <div class="search-wrap">
+        <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M14 14l4 4"/></svg>
+        <input class="search-input" id="search-input" type="text" placeholder="Search…" autocomplete="off" oninput="onSearchInput(this.value)">
+      </div>
     <div class="user-badge" id="user-badge" style="display:none">
       <div class="user-avatar" id="user-avatar">?</div>
       <span class="user-email-label" id="user-email-label"></span>
@@ -1043,6 +1065,10 @@ let pendingTodos = [];   // reviewed todos waiting to be saved
 let catchupTarget = null; // {todoId}
 
 let pendingSaveTimers = {};
+let searchQuery = '';
+let searchDebounce = null;
+let undoStack = null;
+let undoTimer = null;
 let delTarget = null; // {tabId, noteId}
 
 function simpleHash(str) {
@@ -1129,14 +1155,18 @@ async function saveToStorage() {
   try {
     const payload = JSON.stringify(state);
     if (sb && currentUserId) {
-      await sb.from('worknote_data').upsert(
+      const { error } = await sb.from('worknote_data').upsert(
         { user_id: currentUserId, data: payload, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' }
       );
+      if (error) { showSaveError(error.message || 'Supabase error'); return; }
     } else {
       localStorage.setItem(LS_KEY, payload);
     }
-  } catch(e) { console.warn('save error', e); }
+    hideSaveError();
+  } catch(e) {
+    showSaveError(e.message || 'Unknown error');
+  }
 }
 
 async function loadFromStorage() {
@@ -1155,6 +1185,69 @@ async function loadFromStorage() {
       migrateSubNotes();
     }
   } catch(e) { console.warn('load error', e); }
+}
+
+// ─── SAVE ERROR BANNER ───────────────────────────────────────────────
+function showSaveError(msg) {
+  const el = document.getElementById('save-error-banner');
+  const msgEl = document.getElementById('save-error-msg');
+  if (!el) return;
+  if (msgEl) msgEl.textContent = 'Save failed: ' + msg;
+  el.classList.add('show');
+}
+function hideSaveError() {
+  const el = document.getElementById('save-error-banner');
+  if (el) el.classList.remove('show');
+}
+
+// ─── UNDO TOAST ──────────────────────────────────────────────────────
+function showUndoToast(msg) {
+  clearTimeout(undoTimer);
+  const msgEl = document.getElementById('undo-toast-msg');
+  if (msgEl) msgEl.textContent = msg;
+  const toast = document.getElementById('undo-toast');
+  if (toast) toast.classList.add('show');
+  undoTimer = setTimeout(hideUndoToast, 5000);
+}
+function hideUndoToast() {
+  const toast = document.getElementById('undo-toast');
+  if (toast) toast.classList.remove('show');
+  undoStack = null;
+}
+function doUndo() {
+  if (!undoStack) return;
+  const { type, data } = undoStack;
+  undoStack = null;
+  hideUndoToast();
+  if (type === 'historyNote') {
+    const notes = getNotes(data.tabId);
+    notes.history.push(data.entry);
+    notes.history.sort((a, b) => a.date < b.date ? -1 : 1);
+    saveToStorage(); render();
+  } else if (type === 'subHistoryNote') {
+    const sub = getSubs(data.tabId).find(s => s.id === data.subId);
+    if (sub) { sub.history.push(data.entry); saveToStorage(); render(); }
+  } else if (type === 'subItem') {
+    getSubs(data.tabId).unshift(data.sub);
+    saveToStorage(); render();
+  } else if (type === 'todo') {
+    if (!state.todos) state.todos = [];
+    state.todos.push(data.todo);
+    saveToStorage(); render();
+  }
+}
+
+// ─── SEARCH ──────────────────────────────────────────────────────────
+function onSearchInput(val) {
+  searchQuery = val.trim().toLowerCase();
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(render, 200);
+}
+function highlightMatch(text, query) {
+  const escaped = escHtml(text);
+  if (!query) return escaped;
+  const re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  return escaped.replace(re, '<mark class="hl">$1</mark>');
 }
 
 function getNotes(tabId) {
@@ -1301,19 +1394,20 @@ function renderPage() {
   const histCard = document.createElement('div');
   histCard.className = 'card';
   const hist = [...(notes.history || [])].reverse();
+  const filteredHist = searchQuery ? hist.filter(h => h.text.toLowerCase().includes(searchQuery)) : hist;
   histCard.innerHTML = `
     <div class="card-header">
       <div class="card-title">
         <div class="card-title-icon icon-history">≡</div>
         Historical notes
       </div>
-      <span style="font-size:12px;color:var(--text3)">${hist.length} entr${hist.length!==1?'ies':'y'}</span>
+      <span style="font-size:12px;color:var(--text3)">${filteredHist.length} entr${filteredHist.length!==1?'ies':'y'}</span>
     </div>
     <div class="history-list">
-      ${hist.length ? hist.map(h => `
+      ${filteredHist.length ? filteredHist.map(h => `
         <div class="history-item">
           <span class="history-date">${fmtDate(h.date)}</span>
-          <span class="history-text">${escHtml(h.text)}</span>
+          <span class="history-text">${highlightMatch(h.text, searchQuery)}</span>
           <div class="history-actions">
             <button class="history-action-btn del" title="Delete" onclick="promptDel('${tabId}','${h.id}')">✕</button>
           </div>
@@ -1592,13 +1686,13 @@ function renderSubItem(tabId, sub) {
         <div class="sub-panel">
           <div class="sub-panel-title">≡ Historical notes</div>
           <div id="sub-hist-${sid}">
-            ${hist.length ? hist.map(h => `
+            ${(() => { const filteredSubHist = searchQuery ? hist.filter(h => h.text.toLowerCase().includes(searchQuery)) : hist; return filteredSubHist.length ? filteredSubHist.map(h => `
               <div class="sub-history-item">
                 <span class="sub-history-date">${fmtDate(h.date)}</span>
-                <span class="sub-history-text">${escHtml(h.text)}</span>
+                <span class="sub-history-text">${highlightMatch(h.text, searchQuery)}</span>
                 <button class="sub-history-del" title="Delete" onclick="deleteSubNote('${tabId}','${sid}','${h.id}')">✕</button>
               </div>
-            `).join('') : `<p class="sub-ai-placeholder">No historical notes yet.</p>`}
+            `).join('') : `<p class="sub-ai-placeholder">No historical notes yet.</p>`; })()}
           </div>
         </div>
 
@@ -1708,6 +1802,8 @@ function deleteSubNote(tabId, subId, noteId) {
   const subs = getSubs(tabId);
   const sub = subs.find(s => s.id === subId);
   if (!sub) return;
+  const _e = (sub.history||[]).find(h => h.id === noteId);
+  if (_e) { undoStack = { type: 'subHistoryNote', data: { tabId, subId, entry: _e } }; showUndoToast('Note deleted. Undo'); }
   sub.history = (sub.history || []).filter(h => h.id !== noteId);
   saveToStorage();
   const histEl = document.getElementById('sub-hist-'+subId);
@@ -1736,6 +1832,8 @@ function addSubItem(tabId) {
 }
 
 function removeSubItem(tabId, subId) {
+  const _sub = getSubs(tabId).find(s => s.id === subId);
+  if (_sub) { undoStack = { type: 'subItem', data: { tabId, sub: JSON.parse(JSON.stringify(_sub)) } }; showUndoToast('Sub-item deleted. Undo'); }
   state.subItems[tabId] = getSubs(tabId).filter(s => s.id !== subId);
   render();
   saveToStorage();
@@ -1840,6 +1938,8 @@ function closeDelModal() {
 function confirmDel() {
   if (!delTarget) return;
   const notes = getNotes(delTarget.tabId);
+  const _entry = notes.history.find(h => h.id === delTarget.noteId);
+  if (_entry) { undoStack = { type: 'historyNote', data: { tabId: delTarget.tabId, entry: _entry } }; showUndoToast('Note deleted. Undo'); }
   notes.history = notes.history.filter(h => h.id !== delTarget.noteId);
   saveToStorage();
   closeDelModal();
@@ -2094,7 +2194,10 @@ function renderTodosPage() {
   rc.innerHTML = '';
 
   const todos = state.todos || [];
-  const filtered = sortTodos(filterTodos(todos));
+  let filtered = sortTodos(filterTodos(todos));
+  if (searchQuery) {
+    filtered = filtered.filter(t => (t.task||'').toLowerCase().includes(searchQuery) || (t.pic||'').toLowerCase().includes(searchQuery));
+  }
   const overdue = todos.filter(t => t.status !== 'done' && t.due && t.due < todayStr());
   const catchupDueCount = todaysDueTodos().length;
 
@@ -2157,7 +2260,10 @@ function renderTodosPage() {
   wrap.innerHTML =
     '<div class="card-header">' +
       '<div class="card-title"><div class="card-title-icon" style="background:#E6F1FB;color:#185FA5;">&#9745;</div> Todos</div>' +
-      '<button class="btn btn-primary" onclick="openAddTodoModal()">+ Add todo</button>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="btn" onclick="exportData()">↓ Export</button>' +
+        '<button class="btn btn-primary" onclick="openAddTodoModal()">+ Add todo</button>' +
+      '</div>' +
     '</div>' +
     '<div class="todo-filter-bar">' +
     filters.map(fv => '<button class="filter-chip ' + (todoFilter===fv[0]?'active':'') + '" onclick="setTodoFilter(\'' + fv[0] + '\')">' + fv[1] + '</button>').join('') +
@@ -2196,7 +2302,7 @@ function renderTodoRow(todo) {
     ? '<button class="todo-pill catchup-due" style="cursor:pointer;border:none;" onclick="toggleInlineCatchup(\'' + todo.id + '\')" title="Catchup due — click to update">&#128276; Due — update</button>'
     : (todo.catchup ? '<span style="font-size:12px;color:var(--text2);">' + fmtDate(todo.catchup) + '</span>' : '<span style="color:var(--text3);font-size:12px;">—</span>');
 
-  let taskCell = '<div class="todo-task' + (todo.status==='done'?' done':'') + '">' + escHtml(todo.task) + '</div>';
+  let taskCell = '<div class="todo-task' + (todo.status==='done'?' done':'') + '">' + highlightMatch(todo.task||'', searchQuery) + '</div>';
   if (updCount) {
     taskCell += '<div style="font-size:11px;color:var(--text3);cursor:pointer;margin-top:4px;" onclick="toggleTodoUpdates(\'' + todo.id + '\')">' + updCount + ' update' + (updCount>1?'s':'') + ' &#9662;</div>';
     taskCell += '<div class="todo-updates" id="todo-upd-' + todo.id + '">';
@@ -2213,7 +2319,7 @@ function renderTodoRow(todo) {
   let html = '<tr class="' + rowClass + '" id="todo-row-' + todo.id + '">' +
     '<td>' + taskCell + '</td>' +
     '<td>' + statusBadge + '</td>' +
-    '<td>' + (todo.pic ? '<span class="todo-pill pic">' + escHtml(todo.pic) + '</span>' : '<span style="color:var(--text3);font-size:12px;">—</span>') + '</td>' +
+    '<td>' + (todo.pic ? '<span class="todo-pill pic">' + highlightMatch(todo.pic||'', searchQuery) + '</span>' : '<span style="color:var(--text3);font-size:12px;">—</span>') + '</td>' +
     '<td class="col-sub"><span class="todo-fn-tag" style="background:' + fnColor + '">' + escHtml(fnLabel) + '</span></td>' +
     '<td class="col-sub">' + (subLabel ? '<span style="font-size:12px;color:var(--text2);">' + escHtml(subLabel) + '</span>' : '<span style="color:var(--text3);font-size:12px;">—</span>') + '</td>' +
     '<td>' + duePill + '</td>' +
@@ -2316,6 +2422,8 @@ function cycleTodoStatus(id) {
 }
 
 function deleteTodo(id) {
+  const _todo = (state.todos||[]).find(t => t.id === id);
+  if (_todo) { undoStack = { type: 'todo', data: { todo: JSON.parse(JSON.stringify(_todo)) } }; showUndoToast('Todo deleted. Undo'); }
   state.todos = (state.todos||[]).filter(t => t.id !== id);
   saveToStorage();
   renderTabs();
@@ -2363,6 +2471,58 @@ function confirmAddTodo() {
   });
   closeAddTodoModal();
 }
+// ─── EXPORT ──────────────────────────────────────────────────────────
+function triggerDownload(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+function exportTodosCSV() {
+  const headers = ['Task','Status','PIC','Function','Sub-item','Due date','Next catchup'];
+  const rows = (state.todos || []).map(t => [
+    t.task||'', t.status||'', t.pic||'',
+    getFnLabel(t.fnId)||'', getSubLabel(t.fnId, t.subId)||'',
+    t.due||'', t.catchup||''
+  ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','));
+  const csv = [headers.join(','), ...rows].join('\r\n');
+  triggerDownload(csv, 'worknote-todos-' + todayStr() + '.csv', 'text/csv;charset=utf-8;');
+}
+
+function exportNotesText() {
+  let out = 'WorkNote Export — ' + todayStr() + '\n' + '='.repeat(40) + '\n\n';
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    ...state.functions.map(f => ({ id: f.id, label: f.label }))
+  ];
+  tabs.forEach(tab => {
+    const notes = getNotes(tab.id);
+    const hist = [...(notes.history||[])].reverse();
+    if (!hist.length && !notes.today) return;
+    out += '## ' + tab.label + '\n\n';
+    if (notes.today) out += "Today's draft:\n" + notes.today + '\n\n';
+    hist.forEach(h => { out += '[' + fmtDate(h.date) + '] ' + h.text + '\n\n'; });
+    const subs = getSubs(tab.id);
+    subs.forEach(s => {
+      const sh = [...(s.history||[])].reverse();
+      if (!sh.length && !s.today) return;
+      out += '### ' + s.label + '\n';
+      if (s.today) out += "Today's draft:\n" + s.today + '\n\n';
+      sh.forEach(h => { out += '[' + fmtDate(h.date) + '] ' + h.text + '\n\n'; });
+    });
+    out += '\n';
+  });
+  triggerDownload(out, 'worknote-notes-' + todayStr() + '.txt', 'text/plain;charset=utf-8;');
+}
+
+function exportData() {
+  exportTodosCSV();
+  setTimeout(exportNotesText, 300);
+}
+
 function addTodo(fields) {
   if (!state.todos) state.todos = [];
   state.todos.push(Object.assign({ id: uid(), updates: [] }, fields));
@@ -2728,5 +2888,13 @@ wireBulletEvents(document);
   }
 })();
 </script>
+  <div id="undo-toast">
+    <span id="undo-toast-msg">Deleted.</span>
+    <button id="undo-toast-btn" onclick="doUndo()">Undo</button>
+  </div>
+  <div id="save-error-banner">
+    <span id="save-error-msg">Save failed.</span>
+    <button id="save-error-x" onclick="hideSaveError()">✕</button>
+  </div>
 </body>
 </html>
