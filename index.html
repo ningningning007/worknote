@@ -1883,7 +1883,7 @@ async function generateSubAI(tabId, subId) {
 
   try {
     const fullText2 = await streamFetch({
-      model: 'MiniMax-M2.7',
+      model: 'claude-sonnet-4-6',
       max_tokens: 350,
       system: `You are a work notes summariser. Extract only what is explicitly stated — do NOT infer or add anything.
 
@@ -2108,7 +2108,7 @@ async function generateAI(tabId) {
 
   try {
     const fullText = await streamFetch({
-      model: 'MiniMax-M2.7',
+      model: 'claude-sonnet-4-6',
       max_tokens: 450,
       system: `You are a work notes summariser. Extract only what is explicitly stated — do NOT infer or add anything.
 
@@ -2578,7 +2578,7 @@ async function extractTodosFromNote(text, tabId, subId) {
     'Output a JSON array only.';
   try {
     const fullText = await streamFetch({
-      model: 'MiniMax-M2.5-highspeed',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       system: 'You extract tasks from work notes and output them as a JSON array. ' +
         'Work notes often describe past events (meetings, calls, discussions) — always extract any actions, preparations, or follow-ups that were mentioned or recommended, even if phrased in past tense.\n\n' +
